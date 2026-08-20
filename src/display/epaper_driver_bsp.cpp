@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -88,6 +89,8 @@ void epaper_driver_display::spi_gpio_init() {
 
 	gpio_conf.mode = GPIO_MODE_INPUT;
 	gpio_conf.pin_bit_mask = (0x1ULL<<busy);
+	gpio_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+	gpio_conf.pull_up_en = GPIO_PULLUP_DISABLE;
 	ESP_ERROR_CHECK_WITHOUT_ABORT(gpio_config(&gpio_conf));
 
     set_rst_1();
@@ -108,7 +111,7 @@ void epaper_driver_display::spi_port_init() {
 
   	spi_device_interface_config_t devcfg = {};
   	  	devcfg.spics_io_num = -1;
-  	  	devcfg.clock_speed_hz = 40 * 1000 * 1000;  //Clock out at 10 MHz
+  	  	devcfg.clock_speed_hz = 10 * 1000 * 1000;  //Clock out at 10 MHz
   	  	devcfg.mode = 0;                           //SPI mode 0
   	  	devcfg.queue_size = 7;                     //We want to be able to queue 7 transactions at a time
 
@@ -120,9 +123,14 @@ void epaper_driver_display::spi_port_init() {
 
 void epaper_driver_display::read_busy() {
     int busy = lcd_spi_data.busy;
+    int timeout = 0;
     while(gpio_get_level((gpio_num_t)busy) == 1) 
 	{
         vTaskDelay(pdMS_TO_TICKS(5));   //LOW: idle, HIGH: busy
+        timeout++;
+        if (timeout % 100 == 0) {
+            Serial.printf("[EPD] read_busy waiting... %dms\n", timeout * 5);
+        }
     }
 }
 
