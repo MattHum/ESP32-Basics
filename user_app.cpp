@@ -27,14 +27,12 @@ void user_app_init(void)
     driver_config.mosi = EPD_MOSI_PIN;
     driver_config.scl = EPD_SCK_PIN;
     driver_config.spi_host = EPD_SPI_NUM;
-    driver_config.buffer_len  = 5000;
+    driver_config.buffer_len  = 10000;  //200x200, 2 bits/pixel (4 colors)
   driver = new epaper_driver_display(EPD_WIDTH,EPD_HEIGHT,driver_config);
   driver->EPD_Init();
   driver->EPD_Clear();
   driver->EPD_DisplayPartBaseImage();
   driver->EPD_Init_Partial();
-  driver->EPD_Clear();
-  driver->EPD_DisplayPartBaseImage();
 }
 
 void user_ui_init(void)

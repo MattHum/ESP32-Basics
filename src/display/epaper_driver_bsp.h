@@ -4,10 +4,12 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 
-/* Display color */
+/* 1.54G four-color display colors (2 bits/pixel) */
 typedef enum {
-    DRIVER_COLOR_WHITE  = 0xff,
-    DRIVER_COLOR_BLACK  = 0x00,
+    DRIVER_COLOR_BLACK   = 0x0,
+    DRIVER_COLOR_WHITE   = 0x1,
+    DRIVER_COLOR_YELLOW  = 0x2,
+    DRIVER_COLOR_RED     = 0x3,
     FONT_BACKGROUND = DRIVER_COLOR_WHITE,
 }COLOR_IMAGE;
 
@@ -45,12 +47,7 @@ private:
     void EPD_SendData(uint8_t data);
     void EPD_SendCommand(uint8_t command);
     void writeBytes(uint8_t *buffer,int len);
-    void writeBytes(const uint8_t *buffer, int len);
-    void EPD_SetWindows(uint16_t Xstart, uint16_t Ystart, uint16_t Xend, uint16_t Yend);
-    void EPD_SetCursor(uint16_t Xstart, uint16_t Ystart);
-    void EPD_SetLut(const uint8_t *lut);
     void EPD_TurnOnDisplay();
-    void EPD_TurnOnDisplayPart();
 
 public:
     epaper_driver_display(int width, int height,custom_lcd_spi_t _lcd_spi_data);
@@ -59,7 +56,7 @@ public:
     void EPD_Init();    /* 墨水屏初始化 */
     void EPD_Clear();   /* 清空屏幕 */
     void EPD_Display(); /* 刷buffer到墨水屏 */
-    
+
     /*局部刷新*/
     void EPD_DisplayPartBaseImage();
     void EPD_Init_Partial();

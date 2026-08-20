@@ -6,55 +6,9 @@
 #include "epaper_driver_bsp.h"
 #include "esp_log.h"
 
-#include "esp_heap_caps.h" 
+#include "esp_heap_caps.h"
 
 static const char *TAG = "driver";
-
-const uint8_t WF_Full_1IN54[159] =
-{											
-    0x80,	0x48,	0x40,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,
-    0x40,	0x48,	0x80,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,
-    0x80,	0x48,	0x40,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,
-    0x40,	0x48,	0x80,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,
-    0xA,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x8,	0x1,	0x0,	0x8,	0x1,	0x0,	0x2,					
-    0xA,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x0,	0x0,	0x0,	0x0,	0x0,	0x0,	0x0,					
-    0x22,	0x22,	0x22,	0x22,	0x22,	0x22,	0x0,	0x0,	0x0,			
-    0x22,	0x17,	0x41,	0x0,	0x32,	0x20
-};
-
-unsigned char WF_PARTIAL_1IN54_0[159] =
-{
-    0x0,0x40,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x80,0x80,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x40,0x40,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x80,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0xF,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x1,0x1,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x22,0x22,0x22,0x22,0x22,0x22,0x0,0x0,0x0,
-    0x02,0x17,0x41,0xB0,0x32,0x28,
-};
 
 epaper_driver_display::epaper_driver_display(int width, int height,custom_lcd_spi_t _lcd_spi_data) : 
     lcd_spi_data(_lcd_spi_data),
@@ -65,7 +19,7 @@ epaper_driver_display::epaper_driver_display(int width, int height,custom_lcd_sp
 	spi_port_init();
 	spi_gpio_init();
 
-    buffer = (uint8_t *)heap_caps_malloc(lcd_spi_data.buffer_len, MALLOC_CAP_SPIRAM);
+    buffer = (uint8_t *)heap_caps_malloc(lcd_spi_data.buffer_len, MALLOC_CAP_DMA);
 	assert(buffer);
 }
 
@@ -107,7 +61,7 @@ void epaper_driver_display::spi_port_init() {
   	  	buscfg.sclk_io_num = scl;
   	  	buscfg.quadwp_io_num = -1;
   	  	buscfg.quadhd_io_num = -1;
-  	  	buscfg.max_transfer_sz = Width * Height;
+  	  	buscfg.max_transfer_sz = lcd_spi_data.buffer_len;
 
   	spi_device_interface_config_t devcfg = {};
   	  	devcfg.spics_io_num = -1;
@@ -121,15 +75,18 @@ void epaper_driver_display::spi_port_init() {
   	ESP_ERROR_CHECK(ret);
 }
 
+/* 1.54G busy is INVERTED: LOW = busy/working, HIGH = idle/complete */
 void epaper_driver_display::read_busy() {
     int busy = lcd_spi_data.busy;
+    vTaskDelay(pdMS_TO_TICKS(100));
     int timeout = 0;
-    while(gpio_get_level((gpio_num_t)busy) == 1) 
+    while(gpio_get_level((gpio_num_t)busy) == 0) 
 	{
-        vTaskDelay(pdMS_TO_TICKS(5));   //LOW: idle, HIGH: busy
+        vTaskDelay(pdMS_TO_TICKS(10));
         timeout++;
-        if (timeout % 100 == 0) {
-            Serial.printf("[EPD] read_busy waiting... %dms\n", timeout * 5);
+        if (timeout > 3000) {           //30s timeout, don't hang forever
+            Serial.printf("[EPD] read_busy TIMEOUT after 30s\n");
+            return;
         }
     }
 }
@@ -171,175 +128,81 @@ void epaper_driver_display::writeBytes(uint8_t *buffer,int len) {
   	set_cs_1();
 }
 
-void epaper_driver_display::writeBytes(const uint8_t *buffer, int len) {
-    set_dc_1();
-  	set_cs_0();
-  	esp_err_t ret;
-  	spi_transaction_t t; 
-  	memset(&t, 0, sizeof(t));
-  	t.length = 8 * len;      
-  	t.tx_buffer = buffer;
-  	ret = spi_device_polling_transmit(spi, &t); //Transmit!
-  	assert(ret == ESP_OK);
-  	set_cs_1();
-}
-
-void epaper_driver_display::EPD_SetWindows(uint16_t Xstart, uint16_t Ystart, uint16_t Xend, uint16_t Yend)
-{
-    EPD_SendCommand(0x44);  // SET_RAM_X_ADDRESS_START_END_POSITION
-    EPD_SendData((Xstart>>3) & 0xFF);
-    EPD_SendData((Xend>>3) & 0xFF);
-	
-    EPD_SendCommand(0x45);  // SET_RAM_Y_ADDRESS_START_END_POSITION
-    EPD_SendData(Ystart & 0xFF);
-    EPD_SendData((Ystart >> 8) & 0xFF);
-    EPD_SendData(Yend & 0xFF);
-    EPD_SendData((Yend >> 8) & 0xFF);
-}
-
-void epaper_driver_display::EPD_SetCursor(uint16_t Xstart, uint16_t Ystart)
-{
-    EPD_SendCommand(0x4E); // SET_RAM_X_ADDRESS_COUNTER
-    EPD_SendData(Xstart & 0xFF);
-
-    EPD_SendCommand(0x4F); // SET_RAM_Y_ADDRESS_COUNTER
-    EPD_SendData(Ystart & 0xFF);
-    EPD_SendData((Ystart >> 8) & 0xFF);
-}
-
-void epaper_driver_display::EPD_SetLut(const uint8_t *lut) {
-	EPD_SendCommand(0x32);
-    writeBytes(lut,153);
-	read_busy();
-	
-    EPD_SendCommand(0x3f);
-    EPD_SendData(lut[153]);
-	
-    EPD_SendCommand(0x03);
-    EPD_SendData(lut[154]);
-	
-    EPD_SendCommand(0x04);
-    EPD_SendData(lut[155]);
-	EPD_SendData(lut[156]);
-	EPD_SendData(lut[157]);
-
-	EPD_SendCommand(0x2c);
-    EPD_SendData(lut[158]);
-}
-
 void epaper_driver_display::EPD_TurnOnDisplay() {
-    EPD_SendCommand(0x22);
-    EPD_SendData(0xc7);
-	EPD_SendCommand(0x20);
-    read_busy();
-}
-
-void epaper_driver_display::EPD_TurnOnDisplayPart() {
-    EPD_SendCommand(0x22);
-    EPD_SendData(0xcf);
-    EPD_SendCommand(0x20);
+    EPD_SendCommand(0x12); // DISPLAY_REFRESH
+    EPD_SendData(0x00);
     read_busy();
 }
 
 void epaper_driver_display::EPD_Init() {
+    /* Software reset */
     set_rst_1();
-  	vTaskDelay(pdMS_TO_TICKS(50));
-  	set_rst_0();
-  	vTaskDelay(pdMS_TO_TICKS(20));
-  	set_rst_1();
-  	vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(200));
+    set_rst_0();
+    vTaskDelay(pdMS_TO_TICKS(2));
+    set_rst_1();
+    vTaskDelay(pdMS_TO_TICKS(200));
 
+    Serial.printf("[EPD] busy level after reset = %d\n", gpio_get_level((gpio_num_t)lcd_spi_data.busy));
+
+    EPD_SendCommand(0x4D);
+    EPD_SendData(0x78);
+
+    EPD_SendCommand(0x00); //PSR
+    EPD_SendData(0x0F);
+    EPD_SendData(0x29);
+
+    EPD_SendCommand(0x06); //BTST_P
+    EPD_SendData(0x0D);
+    EPD_SendData(0x12);
+    EPD_SendData(0x30);
+    EPD_SendData(0x20);
+    EPD_SendData(0x19);
+    EPD_SendData(0x2A);
+    EPD_SendData(0x22);
+
+    EPD_SendCommand(0x50); //CDI
+    EPD_SendData(0x37);
+
+    EPD_SendCommand(0x61); //TRES
+    EPD_SendData(Width/256);
+    EPD_SendData(Width%256);
+    EPD_SendData(Height/256);
+    EPD_SendData(Height%256);
+
+    EPD_SendCommand(0xE9);
+    EPD_SendData(0x01);
+
+    EPD_SendCommand(0x30); //PLL
+    EPD_SendData(0x08);
+
+    EPD_SendCommand(0x04); //POWER_ON
     read_busy();
-    EPD_SendCommand(0x12);  //SWRESET
-    read_busy();
-
-    EPD_SendCommand(0x01); //Driver output control
-    EPD_SendData(0xC7);
-    EPD_SendData(0x00);
-    EPD_SendData(0x01);
-
-    EPD_SendCommand(0x11); //data entry mode
-    EPD_SendData(0x01);
-
-	EPD_SetWindows(0, Width-1, Height-1, 0);
-
-    EPD_SendCommand(0x3C); //BorderWavefrom
-    EPD_SendData(0x01);
-
-    EPD_SendCommand(0x18);
-    EPD_SendData(0x80);
-
-    EPD_SendCommand(0x22); //Load Temperature and waveform setting.
-    EPD_SendData(0XB1);
-    EPD_SendCommand(0x20);
-
-    EPD_SetCursor(0, Height-1);
-	read_busy();
-	
-	EPD_SetLut(WF_Full_1IN54);
 }
 
 void epaper_driver_display::EPD_Clear() {
     int buffer_len = lcd_spi_data.buffer_len;
-    memset(buffer,0xff,buffer_len);
+    memset(buffer,0x55,buffer_len);  //4x white (0x01) per byte
 }
 
 void epaper_driver_display::EPD_Display() {
     int buffer_len = lcd_spi_data.buffer_len;
-    EPD_SendCommand(0x24);
+    EPD_SendCommand(0x10);
     assert(buffer);
     writeBytes(buffer,buffer_len);
     EPD_TurnOnDisplay();
 }
 
 void epaper_driver_display::EPD_DisplayPartBaseImage() {
-    int buffer_len = lcd_spi_data.buffer_len;
-    EPD_SendCommand(0x24);
-    assert(buffer);
-    writeBytes(buffer,buffer_len);
-    EPD_SendCommand(0x26);
-    writeBytes(buffer,buffer_len);
-    EPD_TurnOnDisplay();
+    EPD_Display();
 }
 
 void epaper_driver_display::EPD_Init_Partial() {
-    set_rst_1();
-  	vTaskDelay(pdMS_TO_TICKS(50));
-  	set_rst_0();
-  	vTaskDelay(pdMS_TO_TICKS(20));
-  	set_rst_1();
-  	vTaskDelay(pdMS_TO_TICKS(50));
-
-	read_busy();
-	
-	EPD_SetLut(WF_PARTIAL_1IN54_0);
-
-    EPD_SendCommand(0x37); 
-    EPD_SendData(0x00);  
-    EPD_SendData(0x00);  
-    EPD_SendData(0x00);  
-    EPD_SendData(0x00); 
-    EPD_SendData(0x00);  	
-    EPD_SendData(0x40);  
-    EPD_SendData(0x00);  
-    EPD_SendData(0x00);   
-    EPD_SendData(0x00);  
-    EPD_SendData(0x00);
-	
-    EPD_SendCommand(0x3C); //BorderWavefrom
-    EPD_SendData(0x80);
-	
-	EPD_SendCommand(0x22); 
-	EPD_SendData(0xc0); 
-	EPD_SendCommand(0x20); 
-	read_busy();
+    /* No partial refresh on 1.54G; nothing to do */
 }
 
 void epaper_driver_display::EPD_DisplayPart() {
-    EPD_SendCommand(0x24);
-    assert(buffer);
-    writeBytes(buffer,5000);
-    EPD_TurnOnDisplayPart();
+    EPD_Display();
 }
 
 void epaper_driver_display::EPD_DrawColorPixel(uint16_t x, uint16_t y,uint8_t color) {
@@ -349,14 +212,7 @@ void epaper_driver_display::EPD_DrawColorPixel(uint16_t x, uint16_t y,uint8_t co
         return; 
     }
 
-    uint16_t index = y * 25 + (x >> 3); //25是200/8
-    uint8_t bit = 7 - (x & 0x07);
-    if(color == DRIVER_COLOR_WHITE)
-    {
-        buffer[index] |= (0x01 << bit);
-    }
-    else
-    {
-        buffer[index] &= ~(0x01 << bit);
-    }
+    uint16_t byte_index = y * (Width/4) + (x >> 2);
+    uint8_t shift = (3 - (x & 0x03)) * 2;
+    buffer[byte_index] = (buffer[byte_index] & ~(0x03 << shift)) | ((color & 0x03) << shift);
 }

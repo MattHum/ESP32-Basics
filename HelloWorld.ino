@@ -20,7 +20,20 @@ static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_
   {
    	for(int x = area->x1; x <= area->x2; x++)
    	{
-   	  uint8_t color = (*buffer < 0x7fff) ? DRIVER_COLOR_BLACK : DRIVER_COLOR_WHITE;
+   	  uint16_t c = *buffer;
+   	  uint8_t r = (c >> 11) & 0x1F;
+   	  uint8_t g = (c >> 5) & 0x3F;
+   	  uint8_t b = c & 0x1F;
+   	  uint8_t color;
+   	  if (r > 0x14 && g < 0x0A && b < 0x0A) {
+   	    color = DRIVER_COLOR_RED;
+   	  } else if (r > 0x14 && g > 0x14 && b < 0x0A) {
+   	    color = DRIVER_COLOR_YELLOW;
+   	  } else if (c < 0x7fff) {
+   	    color = DRIVER_COLOR_BLACK;
+   	  } else {
+   	    color = DRIVER_COLOR_WHITE;
+   	  }
    	  driver->EPD_DrawColorPixel(x,y,color);
    	  buffer++;
    	}
