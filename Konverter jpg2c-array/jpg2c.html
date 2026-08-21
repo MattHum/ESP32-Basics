@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>jpg2c — ePaper 4-Farben Konverter</title>
+<style>
+  :root{
+    --bg: #0e1210;
+    --panel: #161b18;
+    --panel-2: #1d2320;
+    --line: #2a322d;
+    --text: #e8ece9;
+    --muted: #8fa093;
+    --accent: #ffd500;
+    --accent-2: #e2001a;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, Consolas, Menlo, monospace;
+    --c-black: #0a0a0a;
+    --c-white: #f5f5f2;
+    --c-yellow: #ffd500;
+    --c-red: #e2001a;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height:100vh;
+  }
+  .wrap{ max-width: 1180px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  header.top{ display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom: 26px; border-bottom:1px solid var(--line); padding-bottom:18px;}
+  header.top h1{ font-family: var(--mono); font-size: 22px; letter-spacing: 0.5px; margin:0; font-weight:600;}
+  header.top h1 span{ color: var(--accent); }
+  header.top .sub{ font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .swatches{ display:flex; gap:6px; align-items:center; }
+  .sw{ width:14px; height:14px; border-radius:3px; border:1px solid rgba(255,255,255,0.15); }
+
+  .panel{ background: var(--panel); border:1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+  .panel h2{ font-size:13px; text-transform:uppercase; letter-spacing:1px; color: var(--muted); margin:0 0 14px; font-family: var(--mono); font-weight:600;}
+
+  .config-row{ display:flex; gap:18px; flex-wrap:wrap; align-items:flex-end; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field label{ font-size:12px; color: var(--muted); font-family: var(--mono); }
+  .field input[type=text]{
+    background: var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:9px 11px; border-radius:6px; font-family: var(--mono); font-size:14px; min-width:220px;
+  }
+  .field input[type=text]:focus{ outline:none; border-color: var(--accent); }
+  .hint{ font-size:11px; color:var(--muted); }
+
+  .bg-choice{ display:flex; gap:8px; }
+  .bg-swatch{
+    width: 30px; height: 30px; border-radius: 7px; padding:0;
+    border: 2px solid var(--line); cursor:pointer; transition: border-color .15s, transform .1s;
+  }
+  .bg-swatch:hover{ transform: translateY(-1px); }
+  .bg-swatch.active{ border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,213,0,0.25); }
+
+  .drop{
+    border: 2px dashed var(--line); border-radius: 12px; padding: 42px 20px;
+    text-align:center; cursor:pointer; transition: border-color .15s, background .15s;
+    background: var(--panel-2);
+  }
+  .drop.drag{ border-color: var(--accent); background: rgba(255,213,0,0.06); }
+  .drop .big{ font-size:16px; margin-bottom:6px; }
+  .drop .small{ font-size:12px; color:var(--muted); font-family: var(--mono);}
+  .drop input{ display:none; }
+
+  .toolbar{ display:flex; gap:10px; flex-wrap:wrap; margin-top: 14px; }
+  button{
+    font-family: var(--mono); font-size: 13px; border:1px solid var(--line);
+    background: var(--panel-2); color: var(--text); padding: 9px 14px; border-radius: 7px;
+    cursor:pointer; transition: border-color .15s, background .15s;
+  }
+  button:hover{ border-color: var(--accent); }
+  button.primary{ background: var(--accent); color:#141414; border-color: var(--accent); font-weight:600; }
+  button.primary:hover{ filter: brightness(1.06); }
+  button.danger{ border-color: rgba(226,0,26,0.4); }
+  button.danger:hover{ border-color: var(--accent-2); }
+  button:disabled{ opacity:0.35; cursor:not-allowed; }
+
+  .grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .card{ background: var(--panel); border:1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card-head{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;}
+  .card-head input{
+    background: transparent; border:none; border-bottom: 1px dashed var(--line); color: var(--text);
+    font-family: var(--mono); font-size: 13px; padding: 4px 2px; width: 100%;
+  }
+  .card-head input:focus{ outline:none; border-bottom-color: var(--accent); }
+  .rm{ background:none; border:none; color: var(--muted); cursor:pointer; font-size:16px; padding: 2px 6px; }
+  .rm:hover{ color: var(--accent-2); }
+
+  .previews{ display:flex; gap:10px; margin-bottom:10px; }
+  .pv{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .pv canvas{
+    width:100%; aspect-ratio:1/1; background: #000; border-radius:6px; border:1px solid var(--line);
+    image-rendering: pixelated;
+  }
+  .pv .lbl{ font-size:10px; color: var(--muted); font-family: var(--mono); text-transform:uppercase; letter-spacing: .5px; }
+
+  .ascii-toggle{ font-size:11px; color: var(--muted); cursor:pointer; text-align:center; margin-bottom:8px; font-family: var(--mono); user-select:none; }
+  .ascii-toggle:hover{ color: var(--accent); }
+  pre.ascii{
+    display:none; margin: 0 0 10px; background:#000; border-radius:6px; border:1px solid var(--line);
+    overflow:auto; padding:6px; line-height: 1; letter-spacing: 0;
+  }
+  pre.ascii.show{ display:block; }
+  pre.ascii span{ display:inline-block; width: 8px; }
+
+  .card-foot{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .meta{ font-size:11px; color: var(--muted); font-family: var(--mono); }
+  .card-actions{ display:flex; gap:6px; }
+
+  .empty{ text-align:center; color: var(--muted); font-family: var(--mono); font-size:13px; padding: 20px; }
+
+  footer{ margin-top: 36px; text-align:center; color: var(--muted); font-size: 11px; font-family: var(--mono); }
+  footer a{ color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>jpg<span>2</span>c</h1>
+      <div class="sub">4-Farben C-Array Konverter · Waveshare ESP32-S3-ePaper-1.54G · 200×200 · 2bpp</div>
+    </div>
+    <div class="swatches">
+      <div class="sw" style="background:var(--c-black)" title="Schwarz (00)"></div>
+      <div class="sw" style="background:var(--c-white)" title="Weiß (01)"></div>
+      <div class="sw" style="background:var(--c-yellow)" title="Gelb (10)"></div>
+      <div class="sw" style="background:var(--c-red)" title="Rot (11)"></div>
+    </div>
+  </header>
+
+  <div class="panel">
+    <h2>Konfiguration</h2>
+    <div class="config-row">
+      <div class="field">
+        <label for="arrayName">C-Array-Basisname</label>
+        <input type="text" id="arrayName" value="image_data" spellcheck="false">
+        <div class="hint">Bei mehreren Bildern wird der Dateiname angehängt.</div>
+      </div>
+      <div class="field">
+        <label>Hintergrundfarbe (Transparenz &amp; „Sonstige" Farbtöne)</label>
+        <div class="bg-choice" id="bgChoice">
+          <button type="button" class="bg-swatch active" data-code="1" style="background:#f5f5f2" title="Weiß"></button>
+          <button type="button" class="bg-swatch" data-code="0" style="background:#0a0a0a" title="Schwarz"></button>
+          <button type="button" class="bg-swatch" data-code="2" style="background:#ffd500" title="Gelb"></button>
+          <button type="button" class="bg-swatch" data-code="3" style="background:#e2001a" title="Rot"></button>
+        </div>
+        <div class="hint">Wird für transparente Bereiche und nicht eindeutig zuordenbare Pixel genutzt.</div>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <div class="hint" id="statusLine">Kein Bild geladen.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Bilder</h2>
+    <div class="drop" id="dropzone">
+      <div class="big">📥 Bilder hierher ziehen — oder klicken zum Auswählen</div>
+      <div class="small">JPG / PNG · beliebig viele Dateien · Center-Crop → 200×200</div>
+      <input type="file" id="fileInput" accept="image/png,image/jpeg" multiple>
+    </div>
+    <div class="toolbar">
+      <button class="primary" id="downloadAllBtn" disabled>⬇ Alle als jpg2c_output.h / .cpp (kombiniert)</button>
+      <button id="downloadEachBtn" disabled>⬇ Jedes Bild einzeln herunterladen</button>
+      <button class="danger" id="clearBtn" disabled>Alle entfernen</button>
+    </div>
+  </div>
+
+  <div class="panel" id="galleryPanel" style="display:none;">
+    <h2>Vorschau &amp; Export</h2>
+    <div class="grid" id="gallery"></div>
+  </div>
+
+  <footer>
+    Läuft vollständig lokal im Browser · keine Server-Kommunikation · Buffer 10.000 Byte pro Bild
+  </footer>
+</div>
+
+<script>
+(() => {
+  const W = 200, H = 200;
+  const BYTES_PER_ROW = W / 4; // 50
+  const BUF_SIZE = BYTES_PER_ROW * H; // 10000
+
+  const COLOR_NAMES = ["Schwarz", "Weiss", "Gelb", "Rot"];
+  const COLOR_HEX   = ["#0a0a0a", "#f5f5f2", "#ffd500", "#e2001a"];
+  const COLOR_CHAR  = ["#", ".", "Y", "R"];
+
+  // ---- Farbzuordnung RGB -> 2-Bit Code ----
+  // Schwarz(00)=0, Weiss(01)=1, Gelb(10)=2, Rot(11)=3
+  function classify(r, g, b, bgCode) {
+    if (r < 80 && g < 80 && b < 80) return 0;           // Schwarz
+    if (r > 200 && g > 200 && b > 200) return 1;        // Weiss
+    if (r > 180 && g < 100 && b < 100) return 3;         // Rot
+    if (r > 180 && g > 180 && b < 100) return 2;         // Gelb
+    return bgCode;                                       // Sonstiges -> gewählte Hintergrundfarbe
+  }
+
+  function sanitizeIdent(name) {
+    let s = name.replace(/\.[^/.]+$/, "");            // Extension weg
+    s = s.replace(/[^a-zA-Z0-9_]/g, "_");
+    if (/^[0-9]/.test(s)) s = "_" + s;
+    if (!s) s = "img";
+    return s;
+  }
+
+  // ---- Bild -> 200x200 Center-Crop Canvas ----
+  function toSquareCanvas(img, bgHex) {
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const sx = (img.naturalWidth - side) / 2;
+    const sy = (img.naturalHeight - side) / 2;
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = bgHex;           // Hintergrund zuerst füllen (wichtig bei Transparenz)
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, W, H);
+    return c;
+  }
+
+  // ---- Klassifiziertes Grid + Byte-Buffer erzeugen ----
+  function buildBuffer(squareCanvas, bgCode) {
+    const ctx = squareCanvas.getContext("2d");
+    const imgData = ctx.getImageData(0, 0, W, H);
+    const d = imgData.data;
+    const grid = new Uint8Array(W * H); // colorCode je Pixel, row-major
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const idx = (y * W + x) * 4;
+        const code = classify(d[idx], d[idx + 1], d[idx + 2], bgCode);
+        grid[y * W + x] = code;
+      }
+    }
+
+    const buf = new Uint8Array(BUF_SIZE);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const code = grid[y * W + x];
+        const byteIndex = y * BYTES_PER_ROW + Math.floor(x / 4);
+        const shift = (3 - (x % 4)) * 2; // MSB-first: Px0->Bit7-6 ... Px3->Bit1-0
+        buf[byteIndex] |= (code << shift);
+      }
+    }
+    return { grid, buf };
+  }
+
+  // ---- Konvertiertes Vorschau-Canvas aus Grid ----
+  function renderConverted(grid) {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+    const out = ctx.createImageData(W, H);
+    for (let i = 0; i < W * H; i++) {
+      const hex = COLOR_HEX[grid[i]];
+      const r = parseInt(hex.substr(1, 2), 16);
+      const g = parseInt(hex.substr(3, 2), 16);
+      const b = parseInt(hex.substr(5, 2), 16);
+      out.data[i * 4] = r;
+      out.data[i * 4 + 1] = g;
+      out.data[i * 4 + 2] = b;
+      out.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(out, 0, 0);
+    return c;
+  }
+
+  // ---- ASCII-Vorschau: 4x skaliert (200 -> 50 Blöcke à 4x4 Pixel, Mehrheitsentscheid) ----
+  function buildAscii(grid) {
+    const block = 4;
+    const dim = W / block; // 50
+    const lines = [];
+    for (let by = 0; by < dim; by++) {
+      let rowHtml = "";
+      for (let bx = 0; bx < dim; bx++) {
+        const counts = [0, 0, 0, 0];
+        for (let yy = 0; yy < block; yy++) {
+          for (let xx = 0; xx < block; xx++) {
+            const px = bx * block + xx;
+            const py = by * block + yy;
+            counts[grid[py * W + px]]++;
+          }
+        }
+        let best = 0;
+        for (let k = 1; k < 4; k++) if (counts[k] > counts[best]) best = k;
+        rowHtml += `<span style="color:${COLOR_HEX[best]}">${COLOR_CHAR[best]}</span>`;
+      }
+      lines.push(rowHtml);
+    }
+    return lines.join("\n");
+  }
+
+  // ---- C-Header/Source Generierung ----
+  function guardFromName(name) {
+    return "JPG2C_" + name.toUpperCase().replace(/[^A-Z0-9_]/g, "_") + "_H";
+  }
+
+  function genHeaderFile(entries, guardName) {
+    const guard = guardName || guardFromName(entries.map(e => e.name).join("_"));
+    let s = `#ifndef ${guard}\n#define ${guard}\n\n#include <stdint.h>\n\n`;
+    s += `// Auto-generiert mit jpg2c.html\n`;
+    s += `// Display: Waveshare ESP32-S3-ePaper-1.54G, 200x200px, 4 Farben (2bpp)\n`;
+    s += `// Layout: [Y*50 + X/4], MSB-first, 4 Pixel/Byte\n\n`;
+    s += `#define JPG2C_WIDTH  200\n#define JPG2C_HEIGHT 200\n#define JPG2C_BUFSIZE ${BUF_SIZE}\n\n`;
+    s += `// Farbcodes: 0=Schwarz 1=Weiss 2=Gelb 3=Rot\n\n`;
+    for (const e of entries) {
+      s += `extern const uint8_t ${e.name}[JPG2C_BUFSIZE];\n`;
+    }
+    s += `\n#endif // ${guard}\n`;
+    return s;
+  }
+
+  function bytesToCLiteral(buf) {
+    let out = "";
+    for (let i = 0; i < buf.length; i++) {
+      out += "0x" + buf[i].toString(16).padStart(2, "0").toUpperCase();
+      if (i !== buf.length - 1) out += ",";
+      out += (i % 16 === 15) ? "\n  " : " ";
+    }
+    return out.trim();
+  }
+
+  function genCppFile(entries, headerName) {
+    let s = `#include "${headerName}"\n\n`;
+    for (const e of entries) {
+      s += `const uint8_t ${e.name}[JPG2C_BUFSIZE] = {\n  `;
+      s += bytesToCLiteral(e.buf);
+      s += `\n};\n\n`;
+    }
+    return s;
+  }
+
+  function download(filename, text) {
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---- App state ----
+  const images = []; // { id, file, name, origCanvas, sqCanvas, grid, buf, cardEl }
+  let uid = 0;
+  let bgColorCode = 1; // Default: Weiss
+
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const gallery = document.getElementById("gallery");
+  const galleryPanel = document.getElementById("galleryPanel");
+  const arrayNameInput = document.getElementById("arrayName");
+  const statusLine = document.getElementById("statusLine");
+  const downloadAllBtn = document.getElementById("downloadAllBtn");
+  const downloadEachBtn = document.getElementById("downloadEachBtn");
+  const clearBtn = document.getElementById("clearBtn");
+
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("drag"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag"));
+  dropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("drag");
+    handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener("change", (e) => handleFiles(e.target.files));
+
+  document.getElementById("bgChoice").addEventListener("click", (e) => {
+    const btn = e.target.closest(".bg-swatch");
+    if (!btn) return;
+    bgColorCode = parseInt(btn.dataset.code, 10);
+    document.querySelectorAll(".bg-swatch").forEach(b => b.classList.toggle("active", b === btn));
+    images.forEach(recompute);
+  });
+
+  function handleFiles(fileList) {
+    const files = Array.from(fileList).filter(f => /^image\/(png|jpeg)$/.test(f.type));
+    files.forEach(addImage);
+  }
+
+  function addImage(file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => processImage(file, img);
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function currentArrayName(fileName, isOnly) {
+    const base = sanitizeIdent(arrayNameInput.value.trim() || "image_data");
+    if (isOnly) return base;
+    return base + "_" + sanitizeIdent(fileName);
+  }
+
+  function processImage(file, img) {
+    const bgHex = COLOR_HEX[bgColorCode];
+    const sqCanvas = toSquareCanvas(img, bgHex);
+    const { grid, buf } = buildBuffer(sqCanvas, bgColorCode);
+    const convCanvas = renderConverted(grid);
+
+    const origPreview = document.createElement("canvas");
+    origPreview.width = W; origPreview.height = H;
+    const octx = origPreview.getContext("2d");
+    octx.fillStyle = bgHex;
+    octx.fillRect(0, 0, W, H);
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    octx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, W, H);
+
+    const entry = {
+      id: uid++,
+      file, img, grid, buf,
+      origPreview, convCanvas,
+      customName: sanitizeIdent(file.name.replace(/\.[^/.]+$/, "")),
+    };
+    images.push(entry);
+    renderCard(entry);
+    refreshUI();
+  }
+
+  // ---- Neuberechnung eines Bildes (z.B. nach Wechsel der Hintergrundfarbe) ----
+  function recompute(entry) {
+    const bgHex = COLOR_HEX[bgColorCode];
+    const img = entry.img;
+
+    // Original-Vorschau neu füllen (Transparenz respektiert neue Hintergrundfarbe)
+    const octx = entry.origPreview.getContext("2d");
+    octx.clearRect(0, 0, W, H);
+    octx.fillStyle = bgHex;
+    octx.fillRect(0, 0, W, H);
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    octx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, W, H);
+
+    // Klassifizierung + Buffer neu berechnen
+    const sqCanvas = toSquareCanvas(img, bgHex);
+    const { grid, buf } = buildBuffer(sqCanvas, bgColorCode);
+    entry.grid = grid;
+    entry.buf = buf;
+
+    // Konvertierte Vorschau neu zeichnen
+    const cctx = entry.convCanvas.getContext("2d");
+    const out = cctx.createImageData(W, H);
+    for (let i = 0; i < W * H; i++) {
+      const hex = COLOR_HEX[grid[i]];
+      out.data[i * 4] = parseInt(hex.substr(1, 2), 16);
+      out.data[i * 4 + 1] = parseInt(hex.substr(3, 2), 16);
+      out.data[i * 4 + 2] = parseInt(hex.substr(5, 2), 16);
+      out.data[i * 4 + 3] = 255;
+    }
+    cctx.putImageData(out, 0, 0);
+
+    // ASCII-Vorschau neu erzeugen
+    if (entry.asciiPre) entry.asciiPre.innerHTML = buildAscii(grid);
+  }
+
+  function renderCard(entry) {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const head = document.createElement("div");
+    head.className = "card-head";
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = entry.customName;
+    nameInput.spellcheck = false;
+    nameInput.addEventListener("input", () => {
+      entry.customName = sanitizeIdent(nameInput.value.trim() || "img");
+    });
+    const rm = document.createElement("button");
+    rm.className = "rm"; rm.textContent = "✕"; rm.title = "Entfernen";
+    rm.addEventListener("click", () => {
+      const idx = images.findIndex(e => e.id === entry.id);
+      if (idx >= 0) images.splice(idx, 1);
+      card.remove();
+      refreshUI();
+    });
+    head.appendChild(nameInput);
+    head.appendChild(rm);
+
+    const previews = document.createElement("div");
+    previews.className = "previews";
+
+    const pvOrig = document.createElement("div");
+    pvOrig.className = "pv";
+    const lblOrig = document.createElement("div"); lblOrig.className = "lbl"; lblOrig.textContent = "Original";
+    entry.origPreview.style.width = "100%";
+    pvOrig.appendChild(entry.origPreview);
+    pvOrig.appendChild(lblOrig);
+
+    const pvConv = document.createElement("div");
+    pvConv.className = "pv";
+    const lblConv = document.createElement("div"); lblConv.className = "lbl"; lblConv.textContent = "4-Farben";
+    entry.convCanvas.style.width = "100%";
+    pvConv.appendChild(entry.convCanvas);
+    pvConv.appendChild(lblConv);
+
+    previews.appendChild(pvOrig);
+    previews.appendChild(pvConv);
+
+    const asciiToggle = document.createElement("div");
+    asciiToggle.className = "ascii-toggle";
+    asciiToggle.textContent = "▸ ASCII-Vorschau anzeigen (4× skaliert)";
+    const asciiPre = document.createElement("pre");
+    asciiPre.className = "ascii";
+    asciiPre.style.fontSize = "8px";
+    asciiPre.innerHTML = buildAscii(entry.grid);
+    asciiToggle.addEventListener("click", () => {
+      const showing = asciiPre.classList.toggle("show");
+      asciiToggle.textContent = showing
+        ? "▾ ASCII-Vorschau ausblenden"
+        : "▸ ASCII-Vorschau anzeigen (4× skaliert)";
+    });
+
+    const foot = document.createElement("div");
+    foot.className = "card-foot";
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${entry.img.naturalWidth}×${entry.img.naturalHeight} → 200×200 · ${BUF_SIZE} B`;
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    const dl = document.createElement("button");
+    dl.textContent = "⬇ .h/.cpp";
+    dl.addEventListener("click", () => {
+      const headerName = entry.customName + ".h";
+      const guard = guardFromName(entry.customName);
+      download(headerName, genHeaderFile([{ name: entry.customName }], guard));
+      download(entry.customName + ".cpp", genCppFile([{ name: entry.customName, buf: entry.buf }], headerName));
+    });
+    actions.appendChild(dl);
+    foot.appendChild(meta);
+    foot.appendChild(actions);
+
+    card.appendChild(head);
+    card.appendChild(previews);
+    card.appendChild(asciiToggle);
+    card.appendChild(asciiPre);
+    card.appendChild(foot);
+
+    entry.cardEl = card;
+    entry.asciiPre = asciiPre;
+    gallery.appendChild(card);
+  }
+
+  function refreshUI() {
+    const has = images.length > 0;
+    galleryPanel.style.display = has ? "block" : "none";
+    downloadAllBtn.disabled = !has;
+    downloadEachBtn.disabled = !has;
+    clearBtn.disabled = !has;
+    statusLine.textContent = has
+      ? `${images.length} Bild${images.length > 1 ? "er" : ""} geladen · Buffer ${BUF_SIZE} B / Bild`
+      : "Kein Bild geladen.";
+  }
+
+  downloadAllBtn.addEventListener("click", () => {
+    if (images.length === 0) return;
+    const onlyOne = images.length === 1;
+    const entries = images.map(e => ({
+      name: onlyOne ? sanitizeIdent(arrayNameInput.value.trim() || "image_data") : e.customName,
+      buf: e.buf,
+    }));
+    const headerName = "jpg2c_output.h";
+    download(headerName, genHeaderFile(entries, "JPG2C_OUTPUT_H"));
+    download("jpg2c_output.cpp", genCppFile(entries, headerName));
+  });
+
+  downloadEachBtn.addEventListener("click", () => {
+    images.forEach((entry, i) => {
+      setTimeout(() => {
+        const headerName = entry.customName + ".h";
+        const guard = guardFromName(entry.customName);
+        download(headerName, genHeaderFile([{ name: entry.customName }], guard));
+        download(entry.customName + ".cpp", genCppFile([{ name: entry.customName, buf: entry.buf }], headerName));
+      }, i * 150); // Browser-Downloadlimits entzerren
+    });
+  });
+
+  clearBtn.addEventListener("click", () => {
+    images.length = 0;
+    gallery.innerHTML = "";
+    refreshUI();
+  });
+
+  refreshUI();
+})();
+</script>
+</body>
+</html>
