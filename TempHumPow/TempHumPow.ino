@@ -601,7 +601,11 @@ void setup() {
   drawHud();
   Serial.println("[SETUP] drawHud() OK, gehe in Deep Sleep");
 
-  goToSleep(); // Setup kehrt nie zurück, ESP schläft direkt weiter
+  if (wakeReason != ESP_SLEEP_WAKEUP_UNDEFINED) {
+    goToSleep();
+  } else {
+    Serial.println("[SETUP] Erststart - bleibe wach (Serial + Upload verfügbar)");
+  }
 }
 
 void loop() {
