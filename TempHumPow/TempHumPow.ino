@@ -116,24 +116,26 @@ custom_lcd_spi_t epd_pins = {
   .buffer_len = EPD_BUFFER_LEN
 };
 
-epaper_driver_display epd(EPD_WIDTH, EPD_HEIGHT, epd_pins);
+epaper_driver_display *epd = nullptr;
 
 void initDisplay() {
   Serial.println("[EPD] Power-On + Warte auf Panel-Stabilisierung...");
   digitalWrite(PIN_EPD_POWER, LOW);
   delay(500);
+  Serial.println("[EPD] Erzeuge Treiber-Objekt...");
+  epd = new epaper_driver_display(EPD_WIDTH, EPD_HEIGHT, epd_pins);
   Serial.println("[EPD] Starte EPD_Init...");
-  epd.EPD_Init();
+  epd->EPD_Init();
   Serial.println("[EPD] EPD_Init abgeschlossen");
-  epd.EPD_Clear();
+  epd->EPD_Clear();
   Serial.println("[EPD] Clear abgeschlossen, starte Display-Refresh...");
-  epd.EPD_Display();
+  epd->EPD_Display();
   Serial.println("[EPD] Display-Refresh abgeschlossen");
 }
 
 void pushDisplay() {
   Serial.println("[EPD] Sende Buffer + starte Refresh (~20s, ggf. Busy-Timeout nach 30s beachten)...");
-  epd.EPD_Display(); // sendet Buffer + löst Refresh aus (~20s, kein Partial Refresh möglich)
+  epd->EPD_Display(); // sendet Buffer + löst Refresh aus (~20s, kein Partial Refresh möglich)
   Serial.println("[EPD] Refresh-Aufruf zurückgekehrt");
 }
 
@@ -142,7 +144,7 @@ void pushDisplay() {
 // ---------------------------------------------------------------------------
 void setPx(int x, int y, bool black) {
   if (x < 0 || y < 0 || x >= EPD_WIDTH || y >= EPD_HEIGHT) return;
-  epd.EPD_DrawColorPixel(x, y, black ? DRIVER_COLOR_BLACK : DRIVER_COLOR_WHITE);
+  epd->EPD_DrawColorPixel(x, y, black ? DRIVER_COLOR_BLACK : DRIVER_COLOR_WHITE);
 }
 
 void drawLine(int x0, int y0, int x1, int y1, bool black = true) {
@@ -471,7 +473,7 @@ void drawWifiBars(int x, int y, bool ok) {
 // Zeigt die lokalen Werte (Temp/Feuchte/Akku) großzügig, plus ein kleines
 // "[W]"-Badge oben rechts als dezenten Hinweis auf den WLAN-Setup-Modus.
 void drawSetupScreen() {
-  epd.EPD_Clear();
+  epd->EPD_Clear();
 
   drawCornerBrackets();
 
@@ -499,7 +501,7 @@ void drawSetupScreen() {
 }
 
 void drawHud() {
-  epd.EPD_Clear(); // Buffer auf Weiß zurücksetzen (falls vorher Setup-Screen lief)
+  epd->EPD_Clear(); // Buffer auf Weiß zurücksetzen (falls vorher Setup-Screen lief)
 
   drawCornerBrackets();
 
