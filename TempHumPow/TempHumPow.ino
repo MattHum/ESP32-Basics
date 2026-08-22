@@ -119,11 +119,16 @@ custom_lcd_spi_t epd_pins = {
 epaper_driver_display epd(EPD_WIDTH, EPD_HEIGHT, epd_pins);
 
 void initDisplay() {
+  Serial.println("[EPD] Power-On + Warte auf Panel-Stabilisierung...");
+  digitalWrite(PIN_EPD_POWER, LOW);
+  delay(500);
+  Serial.println("[EPD] Starte EPD_Init...");
   epd.EPD_Init();
-  Serial.println("[EPD] Init abgeschlossen");
+  Serial.println("[EPD] EPD_Init abgeschlossen");
   epd.EPD_Clear();
+  Serial.println("[EPD] Clear abgeschlossen, starte Display-Refresh...");
   epd.EPD_Display();
-  Serial.println("[EPD] Clear + Refresh abgeschlossen");
+  Serial.println("[EPD] Display-Refresh abgeschlossen");
 }
 
 void pushDisplay() {
