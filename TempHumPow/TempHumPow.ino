@@ -8,24 +8,26 @@
     - Akkustand (ADC-Batteriemessung)
   Update: alle 5 Minuten (Deep Sleep Timer) ODER sofort per PWR-Taster.
 
-  WICHTIGER HINWEIS ZUR HARDWARE-KOMPATIBILITÄT:
-  Dieser Sketch verwendet eine GxEPD2-ähnliche Display-API (drawPixel,
-  fillRect, drawCircle, setCursor, print ...) für die HUD-Zeichnung.
-  Das 1.54G-Panel ist ein 4-Farb-Panel (Schwarz/Weiß/Rot/Gelb) mit einem
-  eigenen SPI-Controller. Falls GxEPD2 in deiner installierten Version
-  (noch) keine passende Klasse für dieses Panel mitbringt:
-    -> Nutze stattdessen den Display-Treiber aus Waveshares eigenem
-       GitHub-Repo (waveshareteam/ESP32-S3-ePaper-1.54G, Ordner
-       Example/Arduino_3.2.0). Ersetze NUR die Display-Init- und
-       Display-Refresh-Aufrufe unten (Abschnitt "DISPLAY TREIBER").
-       Die restliche Logik (WLAN, Sensoren, API, Power-Management,
-       Deep Sleep) bleibt unverändert gültig.
+  WLAN-SETUP-VERHALTEN: Ist noch kein WLAN gespeichert (Erststart oder nach
+  Zugangsdaten-Änderung), öffnet WiFiManager automatisch ein Setup-Portal
+  ("TempHumPow-Setup"). Genau in diesem Moment zeichnet der Sketch sofort
+  einen Hinweis-Screen mit den bereits verfügbaren lokalen Werten (Temp,
+  Feuchte, Akku) + WLAN-Verbindungsanleitung. Sobald WLAN erfolgreich
+  konfiguriert (oder der Portal-Timeout von 2 Min erreicht) ist, wird
+  einmal der finale HUD mit allen Daten gezeichnet. Bei bereits gespeichertem
+  WLAN (normaler 5-Minuten-Zyklus) erscheint der Setup-Screen nicht, es wird
+  nur der finale HUD gezeichnet.
 
-  Ebenso: Der exakte GPIO für die Batteriespannungsmessung ist in
-  Waveshares Arduino_3.2.0-Beispiel enthalten ("ADC battery measurement").
-  Trage den dort verwendeten Pin unten bei BATTERY_ADC_PIN ein und
-  kalibriere den Spannungsteiler-Faktor (VOLTAGE_DIVIDER_RATIO) anhand
-  einer Messung mit Multimeter.
+  DISPLAY-TREIBER: Nutzt den echten "epaper_driver_bsp" Treiber (2 Bit/Pixel,
+  Pixel-Zugriff nur über EPD_DrawColorPixel). Alle Linien-, Rechteck-,
+  Kreis-, Text- und 7-Segment-Ziffern-Funktionen in diesem Sketch sind
+  selbst geschrieben, da der Treiber selbst keine Grafik-Primitiven bietet.
+
+  HARDWARE-PINS: Alle projektrelevanten Pins sind laut offizieller Waveshare-
+  GPIO-Tabelle eingetragen und bestätigt:
+    EPD: CS=11, DC=10, RST=9, BUSY=8, SDI(MOSI)=13, SCLK=12, EPD3V3_EN=6
+    Battery: BAT_ADC=4 (Teiler 1:2, exakt), BAT_Control=17, BAT_KEY=18
+    I2C: SDA=47, SCL=48 (RTC/SHTC3/EPD-Touch teilen sich den Bus)
   ============================================================================
 */
 
@@ -37,6 +39,7 @@
 #include <time.h>
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
+#include "epaper_driver_bsp.h"
 
 // ---------------------------------------------------------------------------
 // BOARD-SPEZIFISCHES POWER-MANAGEMENT (ESP32-S3-ePaper-1.54G)
@@ -49,11 +52,28 @@
 #define PIN_I2C_SDA            47
 #define PIN_I2C_SCL            48
 
-// TODO: exakten Pin aus Waveshares Arduino_3.2.0 ADC-Batterie-Beispiel eintragen
-#define BATTERY_ADC_PIN         -1   // Platzhalter -> unbedingt anpassen!
-#define VOLTAGE_DIVIDER_RATIO   2.0f // Platzhalter -> mit Multimeter kalibrieren
+// Battery-ADC: GPIO4, Spannungsteiler R21(200K, pull-up)/R38(200K pull-down)
+// laut Waveshare-Doku: VBAT = VADC x 2 -> Verhältnis ist exakt, keine
+// Kalibrierung nötig (ADC-Nichtlinearität am oberen/unteren Rand ausgenommen)
+#define BATTERY_ADC_PIN         4
+#define VOLTAGE_DIVIDER_RATIO   2.0f
 #define BATTERY_MIN_V           3.3f
 #define BATTERY_MAX_V           4.2f
+
+// ---------------------------------------------------------------------------
+// EPD SPI PINS (laut offizieller Waveshare-GPIO-Tabelle, bestätigt)
+// ---------------------------------------------------------------------------
+#define EPD_PIN_CS     11   // EPD_CS
+#define EPD_PIN_DC     10   // EPD_D/C
+#define EPD_PIN_RST     9   // EPD_RST
+#define EPD_PIN_BUSY    8   // EPD_BUSY
+#define EPD_PIN_MOSI   13   // EPD_SDI
+#define EPD_PIN_SCLK   12   // EPD_SCLK
+#define EPD_SPI_HOST  SPI2_HOST
+
+#define EPD_WIDTH   200
+#define EPD_HEIGHT  200
+#define EPD_BUFFER_LEN  ((EPD_WIDTH * EPD_HEIGHT) / 4)  // 2 Bit/Pixel, 4 Pixel/Byte
 
 // Deep-Sleep-Intervall
 #define SLEEP_SECONDS      (5 * 60)   // 5 Minuten
@@ -78,27 +98,206 @@ struct HudData {
 
 HudData data;
 
+// Vorwärtsdeklarationen (Definitionen weiter unten im Abschnitt "HUD ZEICHNEN")
+void drawSetupScreen();
+void drawHud();
+
 // ---------------------------------------------------------------------------
-// DISPLAY TREIBER (Platzhalter — siehe Hinweis oben)
+// DISPLAY TREIBER (echter Treiber aus epaper_driver_bsp.h/.cpp)
 // ---------------------------------------------------------------------------
-// #include <GxEPD2_4C.h>
-// GxEPD2_4C<...> display(...); // Panel-spezifische Konstruktor-Parameter
-//
-// Für dieses Beispiel nehmen wir an, "display" bietet Adafruit_GFX-kompatible
-// Methoden (fillScreen, drawPixel, drawLine, drawRect, drawCircle,
-// setCursor, setTextSize, print, display()).
-//
-// Falls du Waveshares eigenen Treiber nutzt, kapsle ihn in ein Objekt mit
-// derselben Methodensignatur, damit drawHud() unten unverändert bleibt.
+custom_lcd_spi_t epd_pins = {
+  .cs   = EPD_PIN_CS,
+  .dc   = EPD_PIN_DC,
+  .rst  = EPD_PIN_RST,
+  .busy = EPD_PIN_BUSY,
+  .mosi = EPD_PIN_MOSI,
+  .scl  = EPD_PIN_SCLK,
+  .spi_host  = EPD_SPI_HOST,
+  .buffer_len = EPD_BUFFER_LEN
+};
+
+epaper_driver_display epd(EPD_WIDTH, EPD_HEIGHT, epd_pins);
 
 void initDisplay() {
-  // TODO: Panel-Init aus Waveshare-Beispiel oder GxEPD2 hier aufrufen
-  // display.init();
+  epd.EPD_Init();
+  Serial.println("[EPD] Init abgeschlossen (siehe oben, ob 'busy level after reset' geloggt wurde)");
+  epd.EPD_Clear(); // löscht internen Buffer auf Weiß (0x55 Muster)
 }
 
 void pushDisplay() {
-  // TODO: kompletten Bildschirmaufbau ans Panel senden (full refresh)
-  // display.display();
+  Serial.println("[EPD] Sende Buffer + starte Refresh (~20s, ggf. Busy-Timeout nach 30s beachten)...");
+  epd.EPD_Display(); // sendet Buffer + löst Refresh aus (~20s, kein Partial Refresh möglich)
+  Serial.println("[EPD] Refresh-Aufruf zurückgekehrt");
+}
+
+// ---------------------------------------------------------------------------
+// EIGENE GRAFIK-PRIMITIVEN (der Treiber kann nur EPD_DrawColorPixel)
+// ---------------------------------------------------------------------------
+void setPx(int x, int y, bool black) {
+  if (x < 0 || y < 0 || x >= EPD_WIDTH || y >= EPD_HEIGHT) return;
+  epd.EPD_DrawColorPixel(x, y, black ? DRIVER_COLOR_BLACK : DRIVER_COLOR_WHITE);
+}
+
+void drawLine(int x0, int y0, int x1, int y1, bool black = true) {
+  // Bresenham
+  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  int err = dx + dy;
+  while (true) {
+    setPx(x0, y0, black);
+    if (x0 == x1 && y0 == y1) break;
+    int e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+
+void drawRect(int x, int y, int w, int h, bool black = true) {
+  drawLine(x, y, x + w - 1, y, black);
+  drawLine(x, y + h - 1, x + w - 1, y + h - 1, black);
+  drawLine(x, y, x, y + h - 1, black);
+  drawLine(x + w - 1, y, x + w - 1, y + h - 1, black);
+}
+
+void fillRect(int x, int y, int w, int h, bool black = true) {
+  for (int j = y; j < y + h; j++)
+    for (int i = x; i < x + w; i++)
+      setPx(i, j, black);
+}
+
+void drawCircle(int cx, int cy, int r, bool black = true) {
+  // Midpoint-Circle-Algorithmus (Umriss)
+  int x = r, y = 0, err = 0;
+  while (x >= y) {
+    setPx(cx + x, cy + y, black); setPx(cx + y, cy + x, black);
+    setPx(cx - y, cy + x, black); setPx(cx - x, cy + y, black);
+    setPx(cx - x, cy - y, black); setPx(cx - y, cy - x, black);
+    setPx(cx + y, cy - x, black); setPx(cx + x, cy - y, black);
+    y += 1;
+    err += 1 + 2 * y;
+    if (2 * (err - x) + 1 > 0) { x -= 1; err += 1 - 2 * x; }
+  }
+}
+
+// Bogen (Gauge-Tick) über "sweepDeg" Grad ab "startDeg", Startpunkt oben = -90°
+void drawArc(int cx, int cy, int r, float startDeg, float sweepDeg, int thickness = 2) {
+  for (float a = startDeg; a <= startDeg + sweepDeg; a += 1.0) {
+    float rad = a * PI / 180.0;
+    int x = cx + round(r * cos(rad));
+    int y = cy + round(r * sin(rad));
+    for (int t = 0; t < thickness; t++) setPx(x, y - t, true);
+  }
+}
+
+// --- Minimalistischer 5x7-Blockfont, nur die im HUD benötigten Zeichen ---
+// Eigene, einfache Blockglyphen (kein bestehendes Font-Set kopiert).
+static const uint8_t* getGlyph(char c) {
+  static const uint8_t G_I[7] = {0x1F,0x04,0x04,0x04,0x04,0x04,0x1F};
+  static const uint8_t G_N[7] = {0x11,0x19,0x15,0x13,0x11,0x11,0x11};
+  static const uint8_t G_T[7] = {0x1F,0x04,0x04,0x04,0x04,0x04,0x04};
+  static const uint8_t G_W[7] = {0x11,0x11,0x11,0x15,0x15,0x1B,0x11};
+  static const uint8_t G_E[7] = {0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F};
+  static const uint8_t G_H[7] = {0x11,0x11,0x11,0x1F,0x11,0x11,0x11};
+  static const uint8_t G_R[7] = {0x1E,0x11,0x11,0x1E,0x14,0x12,0x11};
+  static const uint8_t G_D[7] = {0x1E,0x11,0x11,0x11,0x11,0x11,0x1E};
+  static const uint8_t G_G[7] = {0x0F,0x10,0x10,0x17,0x11,0x11,0x0F};
+  static const uint8_t G_C[7] = {0x0F,0x10,0x10,0x10,0x10,0x10,0x0F};
+  static const uint8_t G_S[7] = {0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E};
+  static const uint8_t G_Y[7] = {0x11,0x11,0x0A,0x04,0x04,0x04,0x04};
+  static const uint8_t G_O[7] = {0x0E,0x11,0x11,0x11,0x11,0x11,0x0E};
+  static const uint8_t G_M[7] = {0x11,0x1B,0x15,0x11,0x11,0x11,0x11};
+  static const uint8_t G_P[7] = {0x1E,0x11,0x11,0x1E,0x10,0x10,0x10};
+  static const uint8_t G_U[7] = {0x11,0x11,0x11,0x11,0x11,0x11,0x0E};
+  static const uint8_t G_F[7] = {0x1F,0x10,0x10,0x1E,0x10,0x10,0x10};
+  static const uint8_t G_L[7] = {0x10,0x10,0x10,0x10,0x10,0x10,0x1F};
+  static const uint8_t G_A[7] = {0x0E,0x11,0x11,0x1F,0x11,0x11,0x11};
+  static const uint8_t G_DOT[7]   = {0,0,0,0,0,0,0x04};
+  static const uint8_t G_COLON[7] = {0,0,0x04,0,0x04,0,0};
+  static const uint8_t G_DASH[7]  = {0,0,0,0x0E,0,0,0};
+  static const uint8_t G_PCT[7]   = {0x19,0x1A,0x04,0x04,0x04,0x0B,0x13};
+  static const uint8_t G_LBRACKET[7] = {0x0C,0x08,0x08,0x08,0x08,0x08,0x0C};
+  static const uint8_t G_RBRACKET[7] = {0x06,0x02,0x02,0x02,0x02,0x02,0x06};
+  static const uint8_t G_SPACE[7] = {0,0,0,0,0,0,0};
+  switch (c) {
+    case 'I': return G_I;  case 'N': return G_N;  case 'T': return G_T;
+    case 'W': return G_W;  case 'E': return G_E;  case 'H': return G_H;
+    case 'R': return G_R;  case 'D': return G_D;  case 'G': return G_G;
+    case 'C': return G_C;  case 'S': return G_S;  case 'Y': return G_Y;
+    case 'O': return G_O;  case 'M': return G_M;  case 'P': return G_P;
+    case 'U': return G_U;  case 'F': return G_F;  case 'L': return G_L;
+    case 'A': return G_A;  case '.': return G_DOT; case ':': return G_COLON;
+    case '-': return G_DASH; case '%': return G_PCT;
+    case '[': return G_LBRACKET; case ']': return G_RBRACKET;
+    default:  return G_SPACE;
+  }
+}
+
+int drawChar(int x, int y, char c, int scale = 1) {
+  const uint8_t* glyph = getGlyph(toupper(c));
+  for (int row = 0; row < 7; row++) {
+    for (int col = 0; col < 5; col++) {
+      if (glyph[row] & (0x10 >> col)) {
+        fillRect(x + col * scale, y + row * scale, scale, scale, true);
+      }
+    }
+  }
+  return 6 * scale; // Zeichenbreite inkl. 1px Abstand, skaliert
+}
+
+int drawText(int x, int y, const char* text, int scale = 1) {
+  int cursorX = x;
+  for (int i = 0; text[i] != '\0'; i++) {
+    cursorX += drawChar(cursorX, y, text[i], scale);
+  }
+  return cursorX - x; // Gesamtbreite
+}
+
+// --- 7-Segment-Ziffern für große Messwerte ---
+// Segmente: a=oben, b=oben-rechts, c=unten-rechts, d=unten, e=unten-links, f=oben-links, g=mitte
+static const uint8_t SEVEN_SEG[10] = {
+  0b1111110, // 0: a b c d e f
+  0b0110000, // 1: b c
+  0b1101101, // 2: a b g e d
+  0b1111001, // 3: a b g c d
+  0b0110011, // 4: f g b c
+  0b1011011, // 5: a f g c d
+  0b1011111, // 6: a f g e c d
+  0b1110000, // 7: a b c
+  0b1111111, // 8: alle
+  0b1111011  // 9: a b c d f g
+};
+
+void drawSevenSegDigit(int x, int y, int w, int h, int digit, int thick = 3) {
+  if (digit < 0 || digit > 9) return;
+  uint8_t seg = SEVEN_SEG[digit];
+  int midY = y + h / 2;
+  if (seg & 0b1000000) fillRect(x, y, w, thick, true);                          // a: oben
+  if (seg & 0b0100000) fillRect(x + w - thick, y, thick, h / 2, true);          // b: oben-rechts
+  if (seg & 0b0010000) fillRect(x + w - thick, midY, thick, h / 2, true);       // c: unten-rechts
+  if (seg & 0b0001000) fillRect(x, y + h - thick, w, thick, true);              // d: unten
+  if (seg & 0b0000100) fillRect(x, midY, thick, h / 2, true);                   // e: unten-links
+  if (seg & 0b0000010) fillRect(x, y, thick, h / 2, true);                      // f: oben-links
+  if (seg & 0b0000001) fillRect(x, midY - thick / 2, w, thick, true);           // g: mitte
+}
+
+// Zeichnet eine Zahl wie "23.4" oder "-4.0" mit 7-Segment-Ziffern
+int drawBigNumber(int x, int y, float value, int digitW, int digitH, int thick = 3) {
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%.1f", value);
+  int cursorX = x;
+  for (int i = 0; buf[i] != '\0'; i++) {
+    if (buf[i] == '-') {
+      fillRect(cursorX, y + digitH / 2 - thick / 2, digitW / 2, thick, true);
+      cursorX += digitW / 2 + 3;
+    } else if (buf[i] == '.') {
+      fillRect(cursorX, y + digitH - thick, thick, thick, true);
+      cursorX += thick + 4;
+    } else {
+      drawSevenSegDigit(cursorX, y, digitW, digitH, buf[i] - '0', thick);
+      cursorX += digitW + 4;
+    }
+  }
+  return cursorX - x;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +322,17 @@ void latchBatteryPower() {
   gpio_deep_sleep_hold_dis();
 }
 
+void configModeCallback(WiFiManager *myWiFiManager) {
+  // Wird von WiFiManager genau dann aufgerufen, wenn kein gespeichertes
+  // WLAN gefunden wurde und das Setup-Portal (AP) gestartet ist.
+  Serial.println("[WiFi] Setup-Portal aktiv -> zeichne Hinweis-Screen mit lokalen Werten");
+  drawSetupScreen();
+}
+
 void connectWiFi() {
   WiFiManager wm;
   wm.setConfigPortalTimeout(120); // Portal schließt nach 2 Min ohne Eingabe
+  wm.setAPCallback(configModeCallback);
   data.wifiOk = wm.autoConnect("TempHumPow-Setup");
 
   if (data.wifiOk) {
@@ -219,42 +426,27 @@ void fetchViennaWeather() {
 // Halbkreis-Gauges, Akkubalken unten, Uhrzeit, "SYS NOMINAL"-Statuszeile.
 
 void drawCornerBrackets() {
-  // Vier L-förmige Ecken, je 12px Schenkellänge
-  // display.drawLine(4,16, 4,4);   display.drawLine(4,4, 16,4);
-  // display.drawLine(184,4, 196,4); display.drawLine(196,4, 196,16);
-  // display.drawLine(196,184, 196,196); display.drawLine(196,196, 184,196);
-  // display.drawLine(16,196, 4,196); display.drawLine(4,196, 4,184);
+  drawLine(4, 16, 4, 4);    drawLine(4, 4, 16, 4);
+  drawLine(184, 4, 196, 4); drawLine(196, 4, 196, 16);
+  drawLine(196, 184, 196, 196); drawLine(196, 196, 184, 196);
+  drawLine(16, 196, 4, 196);    drawLine(4, 196, 4, 184);
 }
 
-void drawGauge(int cx, int cy, int r, float value, float minV, float maxV, const char* unit) {
-  // Kreis + Teilbogen oben links als "Tick", passend zum Mockup
-  // display.drawCircle(cx, cy, r);
-  // Bogenlänge proportional zu (value-minV)/(maxV-minV) über 90° zeichnen
-  // (Punkt-für-Punkt via sin/cos, da GxEPD2 keine Arc-Primitive hat)
+// Kreis + Teilbogen als "Tick", proportional zu value im Bereich [minV, maxV]
+void drawGauge(int cx, int cy, int r, float value, float minV, float maxV) {
+  drawCircle(cx, cy, r);
   float pct = constrain((value - minV) / (maxV - minV), 0.0f, 1.0f);
-  float startAngle = -90; // Grad, oben
-  float sweep = 90 * pct;
-  for (float a = startAngle; a <= startAngle + sweep; a += 2) {
-    float rad = a * PI / 180.0;
-    int x = cx + r * cos(rad);
-    int y = cy + r * sin(rad);
-    // display.drawPixel(x, y, GxEPD_BLACK);
-    // display.drawPixel(x, y-1, GxEPD_BLACK); // etwas dicker
-  }
+  drawArc(cx, cy, r, -90, 90 * pct, 2);
 }
 
 void drawBatteryIcon(int x, int y, int pct) {
-  // Rahmen 26x12 + Knubbel + gefüllte Segmente je nach Prozent
-  // display.drawRect(x, y, 26, 12, GxEPD_BLACK);
-  // display.fillRect(x+26, y+4, 3, 4, GxEPD_BLACK);
+  drawRect(x, y, 26, 12);
+  fillRect(x + 26, y + 4, 3, 4, true); // Pluspol-Knubbel
   int filledSegments = map(constrain(pct, 0, 100), 0, 100, 0, 3);
   for (int i = 0; i < 3; i++) {
     int sx = x + 2 + i * 7;
-    if (i < filledSegments) {
-      // display.fillRect(sx, y+2, 6, 8, GxEPD_BLACK);
-    } else {
-      // display.drawRect(sx, y+2, 6, 8, GxEPD_BLACK);
-    }
+    if (i < filledSegments) fillRect(sx, y + 2, 6, 8, true);
+    else drawRect(sx, y + 2, 6, 8);
   }
 }
 
@@ -263,52 +455,81 @@ void drawWifiBars(int x, int y, bool ok) {
   for (int i = 0; i < 4; i++) {
     int barX = x + i * 5;
     int barY = y + (17 - heights[i]);
-    if (ok || i == 0) {
-      // display.fillRect(barX, barY, 3, heights[i], GxEPD_BLACK);
-    } else {
-      // display.drawRect(barX, barY, 3, heights[i], GxEPD_BLACK);
-    }
+    if (ok || i == 0) fillRect(barX, barY, 3, heights[i], true);
+    else drawRect(barX, barY, 3, heights[i]);
   }
 }
 
+// Wird angezeigt, solange kein WLAN gespeichert ist / das Setup-Portal läuft.
+// Zeigt die lokalen Werte (Temp/Feuchte/Akku) großzügig, plus ein kleines
+// "[W]"-Badge oben rechts als dezenten Hinweis auf den WLAN-Setup-Modus.
+void drawSetupScreen() {
+  epd.EPD_Clear(); // Buffer auf Weiß zurücksetzen (falls schon mal gezeichnet wurde)
+
+  drawCornerBrackets();
+
+  drawText(56, 8, "TEMPHUMPOW", 1);
+  drawText(168, 8, "[W]", 1); // kleines WLAN-Setup-Badge, statt großem Hinweistext
+  drawLine(10, 21, 190, 21);
+
+  // Zentrierte, großzügige Innentemperatur-Gauge
+  drawText(88, 30, "INT", 1);
+  drawGauge(100, 90, 44, data.tempIn, 0, 40);
+  drawBigNumber(60, 74, data.tempIn, 16, 26, 4);
+
+  // Feuchtigkeit darunter
+  drawRect(60, 142, 80, 18);
+  { char buf[16]; snprintf(buf, sizeof(buf), "RH %d%%", (int)data.humIn);
+    drawText(78, 147, buf, 1); }
+
+  drawLine(10, 168, 190, 168);
+
+  // Akku unten
+  drawBatteryIcon(14, 176, data.batteryPct);
+  { char buf[8]; snprintf(buf, sizeof(buf), "%d%%", data.batteryPct);
+    drawText(50, 180, buf, 1); }
+  drawWifiBars(160, 172, false); // noch nicht verbunden
+
+  pushDisplay();
+}
+
 void drawHud() {
-  // display.setRotation(0);
-  // display.fillScreen(GxEPD_WHITE);
+  epd.EPD_Clear(); // Buffer auf Weiß zurücksetzen (falls vorher Setup-Screen lief)
 
   drawCornerBrackets();
 
   // Header
-  // display.setCursor(52, 12); display.setTextSize(1);
-  // display.print("TEMPHUMPOW");
-  // display.drawLine(10, 21, 190, 21, GxEPD_BLACK);
-  // display.drawLine(100, 26, 100, 150, GxEPD_BLACK); // gestrichelt simulieren
+  drawText(56, 8, "TEMPHUMPOW", 1);
+  drawLine(10, 21, 190, 21);
+  for (int yy = 26; yy < 150; yy += 4) setPx(100, yy, true); // gestrichelte Trennlinie
 
-  // Links: Innen
-  // display.setCursor(14, 34); display.print("INT");
-  drawGauge(52, 70, 34, data.tempIn, 0, 40, "C");
-  // display.setCursor(38, 74); display.setTextSize(2);
-  // display.print(String(data.tempIn, 1));
-  // display.setCursor(20, 122); display.setTextSize(1);
-  // display.print("RH " + String((int)data.humIn) + "%");
+  // Links: Innen (SHTC3)
+  drawText(14, 26, "INT", 1);
+  drawGauge(52, 70, 34, data.tempIn, 0, 40);
+  drawBigNumber(24, 58, data.tempIn, 12, 20, 3);
+  drawRect(20, 112, 64, 14);
+  { char buf[16]; snprintf(buf, sizeof(buf), "RH %d%%", (int)data.humIn);
+    drawText(30, 116, buf, 1); }
 
-  // Rechts: Wien
-  // display.setCursor(112, 34); display.print("WIEN");
-  drawGauge(148, 70, 34, data.tempOut, -10, 35, "C");
-  // display.setCursor(134, 74); display.setTextSize(2);
-  // display.print(String(data.tempOut, 1));
-  // display.setCursor(140, 122); display.setTextSize(1);
-  // display.print(String(data.rainOut) + "%");
+  // Rechts: Wien (Open-Meteo)
+  drawText(112, 26, "WIEN", 1);
+  drawGauge(148, 70, 34, data.tempOut, -10, 35);
+  drawBigNumber(120, 58, data.tempOut, 12, 20, 3);
+  drawRect(116, 112, 64, 14);
+  { char buf[16]; snprintf(buf, sizeof(buf), "%d%%", data.rainOut);
+    drawText(150, 116, buf, 1); }
 
   // Unten: Akku, WLAN, Uhrzeit
-  // display.drawLine(10, 140, 190, 140, GxEPD_BLACK);
+  drawLine(10, 140, 190, 140);
   drawBatteryIcon(14, 150, data.batteryPct);
-  // display.setCursor(50, 160); display.print(String(data.batteryPct) + "%");
+  { char buf[8]; snprintf(buf, sizeof(buf), "%d%%", data.batteryPct);
+    drawText(50, 154, buf, 1); }
   drawWifiBars(86, 146, data.wifiOk);
-  // display.setCursor(140, 160); display.print("UPD " + String(data.timeStr));
+  { char buf[16]; snprintf(buf, sizeof(buf), "UPD%s", data.timeStr);
+    drawText(130, 154, buf, 1); }
 
-  // display.drawLine(10, 170, 190, 170, GxEPD_BLACK);
-  // display.setCursor(58, 182);
-  // display.print(data.wifiOk ? "SYS NOMINAL" : "SYS OFFLINE");
+  drawLine(10, 170, 190, 170);
+  drawText(58, 180, data.wifiOk ? "SYS NOMINAL" : "SYS OFFLINE", 1);
 
   pushDisplay();
 }
@@ -345,12 +566,29 @@ void setup() {
   esp_sleep_wakeup_cause_t wakeReason = esp_sleep_get_wakeup_cause();
   Serial.printf("Wakeup Grund: %d (1=Timer, wenn undefined=Erststart)\n", wakeReason);
 
+  Serial.println("[SETUP] initDisplay() ...");
   initDisplay();
-  connectWiFi();
+  Serial.println("[SETUP] initDisplay() OK");
+
+  Serial.println("[SETUP] readLocalSensor() ...");
   readLocalSensor();
+  Serial.printf("[SETUP] SHTC3: tempIn=%.1f humIn=%.1f\n", data.tempIn, data.humIn);
+
+  Serial.println("[SETUP] readBattery() ...");
   readBattery();
+  Serial.printf("[SETUP] Battery: %d%%\n", data.batteryPct);
+
+  Serial.println("[SETUP] connectWiFi() ...");
+  connectWiFi(); // zeichnet bei Bedarf via Callback bereits den Setup-Hinweis-Screen
+  Serial.printf("[SETUP] connectWiFi() OK, wifiOk=%d\n", data.wifiOk);
+
+  Serial.println("[SETUP] fetchViennaWeather() ...");
   fetchViennaWeather();
+  Serial.printf("[SETUP] Wien: tempOut=%.1f rainOut=%d\n", data.tempOut, data.rainOut);
+
+  Serial.println("[SETUP] drawHud() ...");
   drawHud();
+  Serial.println("[SETUP] drawHud() OK, gehe in Deep Sleep");
 
   goToSleep(); // Setup kehrt nie zurück, ESP schläft direkt weiter
 }
