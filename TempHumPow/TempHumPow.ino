@@ -3,12 +3,10 @@
   Waveshare ESP32-S3-ePaper-1.54G
   
   Zeigt: Innentemperatur, Feuchtigkeit, Batterie
-  Alle 5 Minuten Deep Sleep + Wake
+  Bleibt nach Setup wach — kein Auto-Deep-Sleep.
 */
 
 #include <Wire.h>
-#include "esp_sleep.h"
-#include "driver/rtc_io.h"
 #include "epaper_driver_bsp.h"
 
 // --- Pins ---
@@ -21,21 +19,20 @@
 
 // --- EPD ---
 #define EPD_PIN_CS   11
-#define EPD_PIN_DC   10
-#define EPD_PIN_RST   9
-#define EPD_PIN_BUSY  8
-#define EPD_PIN_MOSI 13
-#define EPD_PIN_SCLK 12
+#define EPD_PIN_DC     10
+#define EPD_PIN_RST    9
+#define EPD_PIN_BUSY   8
+#define EPD_PIN_MOSI   13
+#define EPD_PIN_SCLK   12
 #define EPD_WIDTH   200
-#define EPD_HEIGHT  200
+#define EPD_HEIGHT   200
 #define EPD_BUFFER_LEN ((EPD_WIDTH * EPD_HEIGHT) / 4)
-#define SLEEP_SECONDS (5 * 60)
 
 // --- Globals ---
 epaper_driver_display *epd = nullptr;
-float gTemp;
-float gHum;
-int gBatPct;
+float gTemp = NAN;
+float gHum = NAN;
+int gBatPct = -1;
 
 // --- Display primitives ---
 void setPx(int x, int y, bool black) {
@@ -265,36 +262,17 @@ void drawHud() {
   epd->EPD_Display();
 }
 
-// --- Deep Sleep ---
-void goToSleep() {
-  digitalWrite(PIN_EPD_POWER, HIGH);
-  gpio_hold_en((gpio_num_t)PIN_VBAT_LATCH);
-  gpio_hold_en((gpio_num_t)PIN_EPD_POWER);
-  gpio_deep_sleep_hold_en();
-  esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_SECONDS * 1000000ULL);
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_PWR_BUTTON, 0);
-  esp_deep_sleep_start();
-}
-
 // --- Setup ---
 void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("=== TempHumPow START ===");
 
-  gTemp = NAN;
-  gHum = NAN;
-  gBatPct = -1;
-
   // Power
   pinMode(PIN_VBAT_LATCH, OUTPUT);
   digitalWrite(PIN_VBAT_LATCH, HIGH);
   pinMode(PIN_EPD_POWER, OUTPUT);
   digitalWrite(PIN_EPD_POWER, LOW);
-  gpio_hold_dis((gpio_num_t)PIN_VBAT_LATCH);
-  gpio_hold_dis((gpio_num_t)PIN_EPD_POWER);
-  gpio_deep_sleep_hold_dis();
-  delay(500);
 
   // Display Treiber
   custom_lcd_spi_t pins;
@@ -323,14 +301,7 @@ void setup() {
   // HUD zeichnen
   drawHud();
   Serial.println("HUD drawn");
-
-  // Deep Sleep (nur nach Wake, nicht beim Erststart)
-  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-  if (cause != ESP_SLEEP_WAKEUP_UNDEFINED) {
-    goToSleep();
-  } else {
-    Serial.println("Erststart - bleibe wach");
-  }
 }
 
+// --- Loop (wird nie erreicht) ---
 void loop() {}
