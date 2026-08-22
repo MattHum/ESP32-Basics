@@ -120,8 +120,10 @@ epaper_driver_display epd(EPD_WIDTH, EPD_HEIGHT, epd_pins);
 
 void initDisplay() {
   epd.EPD_Init();
-  Serial.println("[EPD] Init abgeschlossen (siehe oben, ob 'busy level after reset' geloggt wurde)");
-  epd.EPD_Clear(); // löscht internen Buffer auf Weiß (0x55 Muster)
+  Serial.println("[EPD] Init abgeschlossen");
+  epd.EPD_Clear();
+  epd.EPD_Display();
+  Serial.println("[EPD] Clear + Refresh abgeschlossen");
 }
 
 void pushDisplay() {
@@ -464,31 +466,29 @@ void drawWifiBars(int x, int y, bool ok) {
 // Zeigt die lokalen Werte (Temp/Feuchte/Akku) großzügig, plus ein kleines
 // "[W]"-Badge oben rechts als dezenten Hinweis auf den WLAN-Setup-Modus.
 void drawSetupScreen() {
-  epd.EPD_Clear(); // Buffer auf Weiß zurücksetzen (falls schon mal gezeichnet wurde)
+  epd.EPD_Clear();
 
   drawCornerBrackets();
 
   drawText(56, 8, "TEMPHUMPOW", 1);
-  drawText(168, 8, "[W]", 1); // kleines WLAN-Setup-Badge, statt großem Hinweistext
+  drawText(168, 8, "[W]", 1);
   drawLine(10, 21, 190, 21);
 
-  // Zentrierte, großzügige Innentemperatur-Gauge
-  drawText(88, 30, "INT", 1);
-  drawGauge(100, 90, 44, data.tempIn, 0, 40);
-  drawBigNumber(60, 74, data.tempIn, 16, 26, 4);
-
-  // Feuchtigkeit darunter
-  drawRect(60, 142, 80, 18);
+  drawText(14, 26, "INT", 1);
+  drawGauge(52, 70, 34, data.tempIn, 0, 40);
+  drawBigNumber(24, 58, data.tempIn, 12, 20, 3);
+  drawRect(20, 112, 64, 14);
   { char buf[16]; snprintf(buf, sizeof(buf), "RH %d%%", (int)data.humIn);
-    drawText(78, 147, buf, 1); }
+    drawText(30, 116, buf, 1); }
 
-  drawLine(10, 168, 190, 168);
-
-  // Akku unten
-  drawBatteryIcon(14, 176, data.batteryPct);
+  drawLine(10, 140, 190, 140);
+  drawBatteryIcon(14, 150, data.batteryPct);
   { char buf[8]; snprintf(buf, sizeof(buf), "%d%%", data.batteryPct);
-    drawText(50, 180, buf, 1); }
-  drawWifiBars(160, 172, false); // noch nicht verbunden
+    drawText(50, 154, buf, 1); }
+  drawWifiBars(86, 146, false);
+
+  drawLine(10, 170, 190, 170);
+  drawText(58, 180, "SYS OFFLINE", 1);
 
   pushDisplay();
 }
