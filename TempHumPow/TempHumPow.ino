@@ -87,13 +87,13 @@
 // GLOBALE DATENSTRUKTUR
 // ---------------------------------------------------------------------------
 struct HudData {
-  float tempIn   = NAN;
-  float humIn    = NAN;
-  float tempOut  = NAN;
-  int   rainOut  = -1;
-  int   batteryPct = -1;
-  bool  wifiOk   = false;
-  char  timeStr[6] = "--:--";
+  float tempIn;
+  float humIn;
+  float tempOut;
+  int   rainOut;
+  int   batteryPct;
+  bool  wifiOk;
+  char  timeStr[6];
 };
 
 HudData data;
@@ -105,25 +105,25 @@ void drawHud();
 // ---------------------------------------------------------------------------
 // DISPLAY TREIBER (echter Treiber aus epaper_driver_bsp.h/.cpp)
 // ---------------------------------------------------------------------------
-custom_lcd_spi_t epd_pins = {
-  .cs   = EPD_PIN_CS,
-  .dc   = EPD_PIN_DC,
-  .rst  = EPD_PIN_RST,
-  .busy = EPD_PIN_BUSY,
-  .mosi = EPD_PIN_MOSI,
-  .scl  = EPD_PIN_SCLK,
-  .spi_host  = EPD_SPI_HOST,
-  .buffer_len = EPD_BUFFER_LEN
-};
-
 epaper_driver_display *epd = nullptr;
 
 void initDisplay() {
   Serial.println("[EPD] Power-On + Warte auf Panel-Stabilisierung...");
   digitalWrite(PIN_EPD_POWER, LOW);
   delay(500);
+
+  custom_lcd_spi_t pins;
+  pins.cs   = EPD_PIN_CS;
+  pins.dc   = EPD_PIN_DC;
+  pins.rst  = EPD_PIN_RST;
+  pins.busy = EPD_PIN_BUSY;
+  pins.mosi = EPD_PIN_MOSI;
+  pins.scl  = EPD_PIN_SCLK;
+  pins.spi_host  = EPD_SPI_HOST;
+  pins.buffer_len = EPD_BUFFER_LEN;
+
   Serial.println("[EPD] Erzeuge Treiber-Objekt...");
-  epd = new epaper_driver_display(EPD_WIDTH, EPD_HEIGHT, epd_pins);
+  epd = new epaper_driver_display(EPD_WIDTH, EPD_HEIGHT, pins);
   Serial.println("[EPD] Starte EPD_Init...");
   epd->EPD_Init();
   Serial.println("[EPD] EPD_Init abgeschlossen");
@@ -570,6 +570,13 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("=== TempHumPow START ===");
+
+  memset(&data, 0, sizeof(data));
+  data.tempIn = NAN;
+  data.humIn = NAN;
+  data.tempOut = NAN;
+  data.rainOut = -1;
+  data.batteryPct = -1;
 
   latchBatteryPower();
   Serial.println("[SETUP] latchBatteryPower OK");
