@@ -565,8 +565,12 @@ void goToSleep() {
 // SETUP / LOOP
 // ---------------------------------------------------------------------------
 void setup() {
-  latchBatteryPower(); // MUSS zuerst passieren
   Serial.begin(115200);
+  delay(1000);
+  Serial.println("=== TempHumPow START ===");
+
+  latchBatteryPower();
+  Serial.println("[SETUP] latchBatteryPower OK");
 
   esp_sleep_wakeup_cause_t wakeReason = esp_sleep_get_wakeup_cause();
   Serial.printf("Wakeup Grund: %d (1=Timer, wenn undefined=Erststart)\n", wakeReason);
