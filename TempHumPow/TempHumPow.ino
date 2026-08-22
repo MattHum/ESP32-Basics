@@ -1,9 +1,9 @@
 /*
-  TempHumPow - SciFi ePaper Display
+  TempHumPow - SciFi ePaper Display (minimal, keine Deep Sleep)
   Waveshare ESP32-S3-ePaper-1.54G
   
   Zeigt: Innentemperatur, Feuchtigkeit, Batterie
-  Bleibt nach Setup wach — kein Auto-Deep-Sleep.
+  Bleibt nach setup() ewig wach — Serial + Upload jederzeit möglich.
 */
 
 #include <Wire.h>
@@ -265,16 +265,20 @@ void drawHud() {
 // --- Setup ---
 void setup() {
   Serial.begin(115200);
-  delay(500);
+  delay(1000);
   Serial.println("=== TempHumPow START ===");
+  Serial.println("[DBG] setup() gestartet");
 
   // Power
+  Serial.println("[DBG] Power Pin setup");
   pinMode(PIN_VBAT_LATCH, OUTPUT);
   digitalWrite(PIN_VBAT_LATCH, HIGH);
   pinMode(PIN_EPD_POWER, OUTPUT);
   digitalWrite(PIN_EPD_POWER, LOW);
+  Serial.println("[DBG] Power Pins gesetzt");
 
   // Display Treiber
+  Serial.println("[DBG] Display Treiber initialisieren");
   custom_lcd_spi_t pins;
   pins.cs = EPD_PIN_CS;
   pins.dc = EPD_PIN_DC;
@@ -285,22 +289,30 @@ void setup() {
   pins.spi_host = SPI2_HOST;
   pins.buffer_len = EPD_BUFFER_LEN;
 
+  Serial.println("[DBG] epd object creation");
   epd = new epaper_driver_display(EPD_WIDTH, EPD_HEIGHT, pins);
+  Serial.println("[DBG] epd object created");
   epd->EPD_Init();
+  Serial.println("[DBG] EPD_Init done");
   epd->EPD_Clear();
+  Serial.println("[DBG] EPD_Clear done");
   epd->EPD_Display();
-  Serial.println("[EPD] Init OK");
+  Serial.println("[DBG] EPD_Display done — HUD sollte nun sichtbar sein");
 
   // Sensoren
+  Serial.println("[DBG] Sensoren lesen");
   readSensor();
-  Serial.printf("Temp: %.1f C, Hum: %.1f %%\n", gTemp, gHum);
+  Serial.printf("[DBG] Temp: %.1f C, Hum: %.1f %%\n", gTemp, gHum);
 
   readBattery();
-  Serial.printf("Battery: %d%%\n", gBatPct);
+  Serial.printf("[DBG] Battery: %d%%\n", gBatPct);
 
   // HUD zeichnen
+  Serial.println("[DBG] drawHud() aufrufen");
   drawHud();
-  Serial.println("HUD drawn");
+  Serial.println("[DBG] drawHud() done");
+
+  Serial.println("=== TempHumPow bereit ===");
 }
 
 // --- Loop (wird nie erreicht) ---
