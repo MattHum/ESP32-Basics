@@ -33,9 +33,9 @@
 
 // --- Globals ---
 epaper_driver_display *epd = nullptr;
-float gTemp = NAN;
-float gHum = NAN;
-int gBatPct = -1;
+float gTemp;
+float gHum;
+int gBatPct;
 
 // --- Display primitives ---
 void setPx(int x, int y, bool black) {
@@ -240,13 +240,13 @@ void drawHud() {
   // Temperatur (links oben)
   drawText(14, 28, "TEMP", 1);
   drawGauge(52, 80, 38, gTemp, 0, 40);
-  drawBigNumber(18, 62, gTemp, 14, 24, 3);
+  drawBigNum(18, 62, gTemp, 14, 24, 3);
   drawText(20, 124, "C", 1);
 
   // Feuchte (rechts oben)
   drawText(112, 28, "HUM", 1);
   drawGauge(148, 80, 38, gHum, 0, 100);
-  drawBigNumber(112, 62, gHum, 14, 24, 3);
+  drawBigNum(112, 62, gHum, 14, 24, 3);
   { char buf[8]; snprintf(buf, sizeof(buf), "%d%%", (int)gHum);
     drawText(140, 124, buf, 1); }
 
@@ -281,6 +281,10 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("=== TempHumPow START ===");
+
+  gTemp = NAN;
+  gHum = NAN;
+  gBatPct = -1;
 
   // Power
   pinMode(PIN_VBAT_LATCH, OUTPUT);
