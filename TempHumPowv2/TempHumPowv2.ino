@@ -48,6 +48,7 @@ epaper_driver_display *epd = nullptr;
 float gTemp = NAN;
 float gHum = NAN;
 float gOutTemp = NAN;
+float gOutHum = NAN;
 int gRain = -1;
 int gBatPct = -1;
 bool gWifiOk = false;
@@ -139,6 +140,16 @@ static const uint8_t* getGlyph(char c) {
   static const uint8_t G_COLON[7] = {0,0,0x04,0,0x04,0,0};
   static const uint8_t G_PCT[7] = {0x19,0x1A,0x04,0x04,0x04,0x0B,0x13};
   static const uint8_t G_SPACE[7] = {0,0,0,0,0,0,0};
+  static const uint8_t G_0[7] = {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E};
+  static const uint8_t G_1[7] = {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E};
+  static const uint8_t G_2[7] = {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F};
+  static const uint8_t G_3[7] = {0x0E,0x11,0x01,0x06,0x01,0x11,0x0E};
+  static const uint8_t G_4[7] = {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02};
+  static const uint8_t G_5[7] = {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E};
+  static const uint8_t G_6[7] = {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E};
+  static const uint8_t G_7[7] = {0x1F,0x01,0x02,0x04,0x08,0x08,0x08};
+  static const uint8_t G_8[7] = {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E};
+  static const uint8_t G_9[7] = {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C};
   switch (c) {
     case 'T': return G_T; case 'E': return G_E; case 'M': return G_M;
     case 'P': return G_P; case 'H': return G_H; case 'C': return G_C;
@@ -147,6 +158,10 @@ static const uint8_t* getGlyph(char c) {
     case 'N': return G_N; case 'D': return G_D; case 'G': return G_G;
     case 'L': return G_L; case 'A': return G_A; case 'F': return G_F;
     case 'B': return G_B; case 'U': return G_U;
+    case '0': return G_0; case '1': return G_1; case '2': return G_2;
+    case '3': return G_3; case '4': return G_4; case '5': return G_5;
+    case '6': return G_6; case '7': return G_7; case '8': return G_8;
+    case '9': return G_9;
     case '.': return G_DOT; case ':': return G_COLON; case '%': return G_PCT;
     case 'o': return G_DEG;
     default: return G_SPACE;
@@ -200,15 +215,15 @@ int drawBigNum(int x, int y, float val, int dw, int dh, int t = 3) {
   return cx - x;
 }
 
-// --- Battery Icon ---
+// --- Battery Icon (schmäler) ---
 void drawBattery(int x, int y, int pct) {
-  drawRect(x, y, 26, 12);
-  fillRect(x + 26, y + 4, 3, 4, true);
+  drawRect(x, y, 18, 12);
+  fillRect(x + 18, y + 4, 3, 4, true);
   int filled = (pct < 0) ? 0 : map(constrain(pct, 0, 100), 0, 100, 0, 3);
   for (int i = 0; i < 3; i++) {
-    int sx = x + 2 + i * 7;
-    if (i < filled) fillRect(sx, y + 2, 6, 8, true);
-    else drawRect(sx, y + 2, 6, 8);
+    int sx = x + 2 + i * 5;
+    if (i < filled) fillRect(sx, y + 2, 4, 8, true);
+    else drawRect(sx, y + 2, 4, 8);
   }
 }
 
@@ -245,6 +260,7 @@ void readBattery() {
   float vBat = (raw / 4095.0f) * 3.3f * 2.0f;
   float pct = (vBat - 3.3f) / (4.2f - 3.3f) * 100.0f;
   gBatPct = constrain((int)pct, 0, 100);
+  Serial.printf("[BATT] raw=%d vBat=%.2fV pct_raw=%.1f gBatPct=%d\n", raw, vBat, pct, gBatPct);
 }
 
 // --- WLAN & Wetter ---
@@ -270,7 +286,7 @@ void fetchViennaWeather() {
   char url[256];
   snprintf(url, sizeof(url),
     "http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
-    "&current_weather=true&current=relative_humidity_2m"
+    "&current=temperature_2m,relative_humidity_2m,weather_code"
     "&timezone=Europe%%2FVienna",
     VIENNA_LAT, VIENNA_LON);
   
@@ -286,9 +302,10 @@ void fetchViennaWeather() {
     DeserializationError error = deserializeJson(doc, payload);
     
     if (!error) {
-      gOutTemp = doc["current_weather"]["temperature"];
-      gRain = doc["current_weather"]["weathercode"];
-      Serial.printf("[WETT] Temp: %.1f, Code: %d\n", gOutTemp, gRain);
+      gOutTemp = doc["current"]["temperature_2m"];
+      gRain = doc["current"]["weather_code"];
+      gOutHum = doc["current"]["relative_humidity_2m"];
+      Serial.printf("[WETT] Temp: %.1f, Hum: %.1f, Code: %d\n", gOutTemp, gOutHum, gRain);
     } else {
       Serial.printf("[WETT] JSON Error: %s\n", error.c_str());
     }
@@ -305,45 +322,53 @@ void drawHud() {
   drawLine(0, 188, 0, 200); drawLine(0, 200, 12, 200);
   drawLine(200, 188, 200, 200); drawLine(188, 200, 200, 200);
 
+  // --- Header ---
+  drawText(52, 2, "ESP32S3/08-2026", 1);
+  drawLine(0, 11, 200, 11);
+
+  // Spaltentrenner INNEN|WIEN (Temp + Feucht)
+  drawLine(100, 13, 100, 132);
+
+  // --- TEMPERATUR (y=13-58) ---
   drawLine(0, 58, 200, 58);
-  drawLine(0, 126, 200, 126);
+  drawText(4, 14, "INNEN", 2);
+  drawBigNum(4, 32, gTemp, 13, 24, 2);
+  drawText(78, 38, "oC", 2);
+  drawText(104, 14, "WIEN", 2);
+  drawBigNum(104, 32, gOutTemp, 13, 24, 2);
+  drawText(178, 38, "oC", 2);
 
-  // --- INNEN ---
-  drawText(6, 4, "INNEN", 2);
-  int w1 = drawBigNum(6, 22, gTemp, 16, 28, 2);
-  drawText(8 + w1, 28, "oC", 2);
-
-  // --- WIEN ---
-  drawText(106, 4, "WIEN", 2);
-  int w2 = drawBigNum(106, 22, gOutTemp, 16, 28, 2);
-  drawText(108 + w2, 28, "oC", 2);
-
-  // --- FEUCHT ---
-  drawText(6, 64, "FEUCHT", 2);
-  Serial.printf("[HUD] gHum=%.1f isnan=%d gBatPct=%d\n", gHum, isnan(gHum), gBatPct);
+  // --- FEUCHTIGKEIT (y=58-132) - größer ---
+  drawLine(0, 132, 200, 132);
+  drawText(4, 64, "FEUCHT", 2);
   if (!isnan(gHum) && gHum >= 0 && gHum <= 100) {
     char hbuf[8];
     snprintf(hbuf, sizeof(hbuf), "%d", (int)gHum);
-    int hw = drawText(6, 84, hbuf, 3);
-    drawText(10 + hw, 88, "%", 2);
+    drawText(4, 88, hbuf, 3);
   } else {
-    drawText(6, 84, "--", 3);
+    drawText(4, 88, "--", 3);
   }
+  drawText(72, 96, "%", 2);
+  drawText(104, 64, "WIEN", 2);
+  if (!isnan(gOutHum) && gOutHum >= 0 && gOutHum <= 100) {
+    char ohbuf[8];
+    snprintf(ohbuf, sizeof(ohbuf), "%d", (int)gOutHum);
+    drawText(104, 88, ohbuf, 3);
+  } else {
+    drawText(104, 88, "--", 3);
+  }
+  drawText(172, 96, "%", 2);
 
-  // --- Bottom: BATT + WiFi ---
-  drawBattery(6, 132, gBatPct);
-  if (gBatPct >= 0) {
-    char bbuf[8];
+  // --- BATTERY + WIFI (y=134-200) - schmäler ---
+  drawBattery(4, 148, gBatPct);
+  { char bbuf[8];
     snprintf(bbuf, sizeof(bbuf), "%d%%", gBatPct);
-    drawText(38, 132, bbuf, 2);
-  } else {
-    drawText(38, 132, "--%", 2);
-  }
-
+    drawText(28, 148, bbuf, 2); }
+  drawText(140, 148, "WIFI", 1);
   if (gWifiOk) {
-    drawText(130, 132, gTimeStr, 2);
+    drawText(140, 162, gTimeStr, 2);
   } else {
-    drawText(130, 132, "WIFI?", 2);
+    drawText(140, 162, "?", 2);
   }
 
   epd->EPD_Display();
