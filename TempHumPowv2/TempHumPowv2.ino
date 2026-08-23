@@ -2,7 +2,7 @@
   TempHumPowv2 - SciFi ePaper Display mit WiFi und Wetter
   Waveshare ESP32-S3-ePaper-1.54G
   
-  Zeigt: Innentemperatur, Feuchtigkeit, Akku
+  Zeigt: Innentemperatur, Feuchtigkeit, Batterie
   + Wien Außentemperatur + Regenwahrscheinlichkeit (Open-Meteo)
   Update: bei WLAN-Connect oder alle 5 Min (Deep Sleep optional)
 
@@ -45,12 +45,12 @@
 
 // --- Globals ---
 epaper_driver_display *epd = nullptr;
-float gTemp = NAN;     // Innentemperatur
-float gHum = NAN;      // Innentemperatur
-float gOutTemp = NAN;  // Außentemperatur Wien
-int gRain = -1;        // Regenwahrscheinlichkeit Wien
-int gBatPct = -1;      // Akku-Prozent
-bool gWifiOk = false;  // WLAN-Status
+float gTemp = NAN;
+float gHum = NAN;
+float gOutTemp = NAN;
+int gRain = -1;
+int gBatPct = -1;
+bool gWifiOk = false;
 char gTimeStr[6] = "--:--";
 
 // --- Display primitives ---
@@ -239,10 +239,10 @@ void readBattery() {
   gBatPct = constrain((int)pct, 0, 100);
 }
 
-// --- WiFi & Wetter ---
+// --- WLAN & Wetter ---
 void connectWiFi() {
   WiFiManager wm;
-  wm.setConfigPortalTimeout(180); // Portal offen bei keinem WLAN für 3 Min
+  wm.setConfigPortalTimeout(180);
   gWifiOk = wm.autoConnect("TempHumPow-Setup");
   if (gWifiOk) {
     setenv("TZ", VIENNA_TZ, 1);
@@ -259,11 +259,9 @@ void fetchViennaWeather() {
   if (!gWifiOk) return;
   
   HTTPClient http;
-  String url = "http://api.open-meteo.com/v1/forecast?"
-               "latitude=" + VIENNA_LAT +
-               "&longitude=" + VIENNA_LON +
-               "&current_weather=temperature_weathercode" +
-               "&timezone=Europe%2FVienna";
+  char url[200];
+  snprintf(url, sizeof(url), "http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current_weather=temperature_weathercode&timezone=Europe%%2FVienna",
+           VIENNA_LAT, VIENNA_LON);
   
   http.begin(url);
   int code = http.GET();
@@ -336,48 +334,4 @@ void setup() {
   Serial.println("=== Setup fertig ===");
 }
 
-// --- Loop (wird nie erreicht) ---
 void loop() {}
-
-// --- HUD zeichnen ---
-void drawHud() {
-  epd->EPD_Clear();
-
-  // Oberer Bereich: Header
-  drawText(56, 8, "TEMPHUMPOW", 1);
-  drawLine(10, 21, 190, 21);
-
-  // Links: Innen (Temp + Gauge + Feuchte)
-  drawText(14, 28, "TEMP", 1);
-  drawGauge(52, 72, 36, gTemp, 0, 40);
-  drawBigNum(18, 58, gTemp, 14, 24, 3);
-  drawText(20, 122, "C", 1);
-
-  drawText(112, 28, "HUM", 1);
-  drawGauge(148, 72, 36, gHum, 0, 100);
-  drawBigNum(112, 58, gHum, 14, 24, 3);
-  { char buf[8]; snprintf(buf, sizeof(buf), "%d%%", (int)gHum);
-    drawText(140, 122, buf, 1); }
-
-  // Trennlinie
-  drawLine(10, 130, 190, 130);
-
-  // Rechts: Wien (Außentemp + Regen)
-  drawText(112, 28, "WIEN", 1);
-  drawGauge(148, 72, 36, gOutTemp, -10, 35);
-  drawBigNum(112, 58, gOutTemp, 14, 24, 3);
-  { char buf[8]; snprintf(buf, sizeof(buf), "%d°C", (int)gOutTemp);
-    drawText(140, 122, buf, 1); }
-
-  // Regenwahrscheinlichkeit
-  { char buf[8]; snprintf(buf, sizeof(buf), "%d%% Regen", gRain);
-    drawText(100, 135, buf, 1); }
-
-  // Unten: Akku + Zeit
-  drawBattery(14, 152, gBatPct);
-  { char buf[8]; snprintf(buf, sizeof(buf), "%d%%", gBatPct);
-    drawText(50, 155, buf, 1); }
-  drawText(130, 155, gTimeStr, 1);
-
-  epd->EPD_Display();
-}
