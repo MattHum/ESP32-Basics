@@ -279,6 +279,63 @@ void fetchViennaWeather() {
   http.end();
 }
 
+// --- HUD Drawing ---
+void drawHud() {
+  drawText(4, 2, "TEMP HUM POW V2", 1);
+
+  // Corner brackets
+  drawLine(0, 0, 12, 0); drawLine(0, 0, 0, 12);
+  drawLine(188, 0, 200, 0); drawLine(200, 0, 200, 12);
+  drawLine(0, 188, 0, 200); drawLine(0, 200, 12, 200);
+  drawLine(200, 188, 200, 200); drawLine(188, 200, 200, 200);
+
+  // Separator lines
+  drawLine(0, 40, 200, 40);
+  drawLine(0, 120, 200, 120);
+  drawLine(100, 40, 100, 120);
+
+  // Indoor temp (top-left)
+  drawText(8, 44, "INNEN", 1);
+  drawBigNum(8, 58, gTemp, 16, 24, 2);
+  drawText(120, 66, "C", 2);
+
+  // Outdoor temp (top-right)
+  drawText(108, 44, "WIEN", 1);
+  drawBigNum(108, 58, gOutTemp, 16, 24, 2);
+  drawText(180, 66, "C", 2);
+
+  // Humidity (middle-left)
+  drawText(8, 124, "FEUCHT", 1);
+  drawGauge(30, 160, 22, gHum, 0, 100);
+  if (!isnan(gHum)) {
+    char hbuf[8];
+    snprintf(hbuf, sizeof(hbuf), "%d%%", (int)gHum);
+    drawText(58, 156, hbuf, 2);
+  } else {
+    drawText(58, 156, "--%", 2);
+  }
+
+  // Battery (middle-right)
+  drawText(108, 124, "BATT", 1);
+  drawBattery(110, 140, gBatPct);
+  if (gBatPct >= 0) {
+    char bbuf[8];
+    snprintf(bbuf, sizeof(bbuf), "%d%%", gBatPct);
+    drawText(142, 140, bbuf, 1);
+  }
+
+  // Bottom bar
+  drawLine(0, 178, 200, 178);
+  drawText(8, 184, "SYS NOMINAL", 1);
+
+  // Time (if available)
+  if (gWifiOk) {
+    drawText(160, 184, gTimeStr, 1);
+  }
+
+  epd->EPD_Display();
+}
+
 // --- Setup ---
 void setup() {
   Serial.begin(115200);
