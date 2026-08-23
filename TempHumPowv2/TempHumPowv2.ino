@@ -281,59 +281,58 @@ void fetchViennaWeather() {
 
 // --- HUD Drawing ---
 void drawHud() {
-  drawText(4, 2, "TEMP HUM POW V2", 1);
-
   // Corner brackets
   drawLine(0, 0, 12, 0); drawLine(0, 0, 0, 12);
   drawLine(188, 0, 200, 0); drawLine(200, 0, 200, 12);
   drawLine(0, 188, 0, 200); drawLine(0, 200, 12, 200);
   drawLine(200, 188, 200, 200); drawLine(188, 200, 200, 200);
 
-  // Separator lines
-  drawLine(0, 40, 200, 40);
-  drawLine(0, 120, 200, 120);
-  drawLine(100, 40, 100, 120);
+  // [w] WiFi indicator (top-right corner)
+  if (!gWifiOk) {
+    drawRect(180, 1, 19, 11);
+    drawText(183, 3, "w", 1);
+  }
 
-  // Indoor temp (top-left)
-  drawText(8, 44, "INNEN", 1);
-  drawBigNum(8, 58, gTemp, 16, 24, 2);
-  drawText(120, 66, "C", 2);
+  // Separator between top and bottom
+  drawLine(0, 96, 200, 96);
 
-  // Outdoor temp (top-right)
-  drawText(108, 44, "WIEN", 1);
-  drawBigNum(108, 58, gOutTemp, 16, 24, 2);
-  drawText(180, 66, "C", 2);
+  // --- Top: INNEN (left) ---
+  drawText(6, 4, "INNEN", 2);
+  drawBigNum(6, 24, gTemp, 18, 28, 3);
+  drawText(100, 32, "C", 2);
 
-  // Humidity (middle-left)
-  drawText(8, 124, "FEUCHT", 1);
-  drawGauge(30, 160, 22, gHum, 0, 100);
+  // --- Top: WIEN (right) ---
+  drawText(106, 4, "WIEN", 2);
+  drawBigNum(106, 24, gOutTemp, 18, 28, 3);
+  drawText(190, 32, "C", 2);
+
+  // --- Bottom: FEUCHT (left) ---
+  drawText(6, 102, "FEUCHT", 2);
   if (!isnan(gHum)) {
     char hbuf[8];
     snprintf(hbuf, sizeof(hbuf), "%d%%", (int)gHum);
-    drawText(58, 156, hbuf, 2);
+    drawText(6, 124, hbuf, 3);
   } else {
-    drawText(58, 156, "--%", 2);
+    drawText(6, 124, "--%%", 3);
   }
 
-  // Battery (middle-right)
-  drawText(108, 124, "BATT", 1);
-  drawBattery(110, 140, gBatPct);
+  // --- Bottom: BATT (right) ---
+  drawText(110, 102, "BATT", 2);
+  drawBattery(110, 126, gBatPct);
   if (gBatPct >= 0) {
     char bbuf[8];
     snprintf(bbuf, sizeof(bbuf), "%d%%", gBatPct);
-    drawText(142, 140, bbuf, 1);
+    drawText(142, 126, bbuf, 2);
   }
 
   // Bottom bar
-  drawLine(0, 178, 200, 178);
-  drawText(8, 184, "SYS NOMINAL", 1);
+  drawLine(0, 162, 200, 162);
 
-  // Bottom right: time or [w] indicator
+  // Time or [w] at bottom
   if (gWifiOk) {
-    drawText(160, 184, gTimeStr, 1);
+    drawText(6, 168, gTimeStr, 2);
   } else {
-    drawText(184, 2, "w", 1);
-    drawRect(180, 1, 17, 9);
+    drawText(6, 168, "WIFI?", 2);
   }
 
   epd->EPD_Display();
