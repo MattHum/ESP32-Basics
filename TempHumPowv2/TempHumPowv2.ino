@@ -341,23 +341,11 @@ void drawHud() {
   // --- FEUCHTIGKEIT (y=58-132) - größer ---
   drawLine(0, 132, 200, 132);
   drawText(4, 64, "FEUCHT", 2);
-  if (!isnan(gHum) && gHum >= 0 && gHum <= 100) {
-    char hbuf[8];
-    snprintf(hbuf, sizeof(hbuf), "%d", (int)gHum);
-    drawText(4, 88, hbuf, 3);
-  } else {
-    drawText(4, 88, "--", 3);
-  }
-  drawText(72, 96, "%", 2);
+  drawBigNum(4, 86, gHum, 13, 24, 2);
+  drawText(68, 92, "%", 2);
   drawText(104, 64, "WIEN", 2);
-  if (!isnan(gOutHum) && gOutHum >= 0 && gOutHum <= 100) {
-    char ohbuf[8];
-    snprintf(ohbuf, sizeof(ohbuf), "%d", (int)gOutHum);
-    drawText(104, 88, ohbuf, 3);
-  } else {
-    drawText(104, 88, "--", 3);
-  }
-  drawText(172, 96, "%", 2);
+  drawBigNum(104, 86, gOutHum, 13, 24, 2);
+  drawText(168, 92, "%", 2);
 
   // --- BATTERY + WIFI (y=134-200) - schmäler ---
   drawBattery(4, 148, gBatPct);
