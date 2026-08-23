@@ -264,72 +264,76 @@ void fetchViennaWeather() {
   if (!gWifiOk) return;
   
   HTTPClient http;
-  char url[200];
-  snprintf(url, sizeof(url), "http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current_weather=temperature_weathercode&timezone=Europe%%2FVienna",
-           VIENNA_LAT, VIENNA_LON);
+  char url[256];
+  snprintf(url, sizeof(url),
+    "http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
+    "&current_weather=true&current=relative_humidity_2m"
+    "&timezone=Europe%%2FVienna",
+    VIENNA_LAT, VIENNA_LON);
   
+  Serial.printf("[WETT] URL: %s\n", url);
   http.begin(url);
   int code = http.GET();
+  Serial.printf("[WETT] HTTP Status: %d\n", code);
   
   if (code == 200) {
     String payload = http.getString();
+    Serial.printf("[WETT] Payload: %.200s...\n", payload.c_str());
     DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, payload);
     
     if (!error) {
       gOutTemp = doc["current_weather"]["temperature"];
       gRain = doc["current_weather"]["weathercode"];
+      Serial.printf("[WETT] Temp: %.1f, Code: %d\n", gOutTemp, gRain);
+    } else {
+      Serial.printf("[WETT] JSON Error: %s\n", error.c_str());
     }
+  } else {
+    Serial.printf("[WETT] HTTP Fehler: %d\n", code);
   }
   http.end();
 }
 
 // --- HUD Drawing ---
 void drawHud() {
-  // Corner brackets
   drawLine(0, 0, 12, 0); drawLine(0, 0, 0, 12);
   drawLine(188, 0, 200, 0); drawLine(200, 0, 200, 12);
   drawLine(0, 188, 0, 200); drawLine(0, 200, 12, 200);
   drawLine(200, 188, 200, 200); drawLine(188, 200, 200, 200);
 
-  // Separator
-  drawLine(0, 96, 200, 96);
+  drawLine(0, 58, 200, 58);
+  drawLine(0, 126, 200, 126);
 
-  // --- Top-left: INNEN ---
   drawText(6, 4, "INNEN", 2);
-  drawBigNum(6, 26, gTemp, 18, 28, 3);
-  drawText(100, 34, "oC", 2);
+  int w1 = drawBigNum(6, 24, gTemp, 16, 28, 2);
+  drawText(8 + w1, 28, "oC", 2);
 
-  // --- Top-right: WIEN ---
-  drawText(110, 4, "WIEN", 2);
-  drawBigNum(110, 26, gOutTemp, 18, 28, 3);
-  drawText(186, 34, "oC", 2);
+  drawText(106, 4, "WIEN", 2);
+  int w2 = drawBigNum(106, 24, gOutTemp, 16, 28, 2);
+  drawText(108 + w2, 28, "oC", 2);
 
-  // --- Bottom-left: FEUCHT ---
-  drawText(6, 102, "FEUCHT", 2);
+  drawText(6, 64, "FEUCHT", 2);
   if (!isnan(gHum)) {
     char hbuf[8];
-    snprintf(hbuf, sizeof(hbuf), "%d%%", (int)gHum);
-    drawText(6, 122, hbuf, 3);
+    snprintf(hbuf, sizeof(hbuf), "%d", (int)gHum);
+    int hw = drawText(6, 82, hbuf, 3);
+    drawText(8 + hw, 88, "%", 2);
   } else {
-    drawText(6, 122, "--%%", 3);
+    drawText(6, 82, "--", 3);
   }
 
-  // --- Bottom-right: BATT ---
-  drawText(120, 102, "BATT", 2);
-  drawBattery(120, 126, gBatPct);
+  drawBattery(6, 132, gBatPct);
   if (gBatPct >= 0) {
     char bbuf[8];
     snprintf(bbuf, sizeof(bbuf), "%d%%", gBatPct);
-    drawText(154, 126, bbuf, 2);
+    drawText(38, 132, bbuf, 2);
   }
 
-  // --- Bottom row: WiFi status ---
-  drawLine(0, 160, 200, 160);
   if (gWifiOk) {
-    drawText(6, 166, gTimeStr, 2);
+    drawText(130, 132, gTimeStr, 2);
   } else {
-    drawText(6, 166, "WIFI?", 2);
+    drawText(130, 132, "WIFI?", 2);
   }
 
   epd->EPD_Display();
