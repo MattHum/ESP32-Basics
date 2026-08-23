@@ -328,9 +328,12 @@ void drawHud() {
   drawLine(0, 178, 200, 178);
   drawText(8, 184, "SYS NOMINAL", 1);
 
-  // Time (if available)
+  // Bottom right: time or [w] indicator
   if (gWifiOk) {
     drawText(160, 184, gTimeStr, 1);
+  } else {
+    drawText(184, 2, "w", 1);
+    drawRect(180, 1, 17, 9);
   }
 
   epd->EPD_Display();
@@ -365,12 +368,7 @@ void setup() {
   epd->EPD_Display();
   Serial.println("[EPD] Init OK");
 
-  // WLAN starten
-  Serial.println("[WLAN] Verbinde...");
-  connectWiFi();
-  Serial.printf("[WLAN] Status: %s\n", gWifiOk ? "ok" : "failed");
-
-  // Sensoren
+  // Sensoren sofort lesen
   Serial.println("[SENS] Lies SHTC3...");
   readSensor();
   Serial.printf("[SENS] Temp: %.1f C, Hum: %.1f %%\n", gTemp, gHum);
@@ -378,13 +376,24 @@ void setup() {
   readBattery();
   Serial.printf("[SENS] Battery: %d%%\n", gBatPct);
 
-  // Wetter abrufen
-  Serial.println("[WETT] Hole Wien-Wetter...");
-  fetchViennaWeather();
-  Serial.printf("[WETT] Außentemp: %.1f C, Regen: %d\n", gOutTemp, gRain);
+  // HUD sofort zeichnen (mit [w] da WiFi noch nicht verbunden)
+  Serial.println("[HUD] Zeichne Initial-HUD...");
+  drawHud();
 
-  // HUD zeichnen
-  Serial.println("[HUD] Zeichne HUD...");
+  // WLAN starten (nach erstem Display-Update)
+  Serial.println("[WLAN] Verbinde...");
+  connectWiFi();
+  Serial.printf("[WLAN] Status: %s\n", gWifiOk ? "ok" : "failed");
+
+  // Wetter abrufen wenn WiFi verbunden
+  if (gWifiOk) {
+    Serial.println("[WETT] Hole Wien-Wetter...");
+    fetchViennaWeather();
+    Serial.printf("[WETT] Außentemp: %.1f C, Regen: %d\n", gOutTemp, gRain);
+  }
+
+  // HUD neu zeichnen mit finalen Daten
+  Serial.println("[HUD] Zeichne finalen HUD...");
   drawHud();
   Serial.println("[HUD] HUD gezeichnet");
 
