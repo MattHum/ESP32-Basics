@@ -132,9 +132,12 @@ static const uint8_t* getGlyph(char c) {
   static const uint8_t G_L[7] = {0x10,0x10,0x10,0x10,0x10,0x10,0x1F};
   static const uint8_t G_A[7] = {0x0E,0x11,0x11,0x1F,0x11,0x11,0x11};
   static const uint8_t G_F[7] = {0x1F,0x10,0x10,0x1E,0x10,0x10,0x10};
-  static const uint8_t G_DOT[7]   = {0,0,0,0,0,0,0x04};
+  static const uint8_t G_B[7] = {0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E};
+  static const uint8_t G_U[7] = {0x11,0x11,0x11,0x11,0x11,0x11,0x0E};
+  static const uint8_t G_DEG[7] = {0x06,0x09,0x09,0x06,0,0,0};
+  static const uint8_t G_DOT[7] = {0,0,0,0,0,0,0x04};
   static const uint8_t G_COLON[7] = {0,0,0x04,0,0x04,0,0};
-  static const uint8_t G_PCT[7]   = {0x19,0x1A,0x04,0x04,0x04,0x0B,0x13};
+  static const uint8_t G_PCT[7] = {0x19,0x1A,0x04,0x04,0x04,0x0B,0x13};
   static const uint8_t G_SPACE[7] = {0,0,0,0,0,0,0};
   switch (c) {
     case 'T': return G_T; case 'E': return G_E; case 'M': return G_M;
@@ -143,7 +146,9 @@ static const uint8_t* getGlyph(char c) {
     case 'W': return G_W; case 'R': return G_R; case 'I': return G_I;
     case 'N': return G_N; case 'D': return G_D; case 'G': return G_G;
     case 'L': return G_L; case 'A': return G_A; case 'F': return G_F;
+    case 'B': return G_B; case 'U': return G_U;
     case '.': return G_DOT; case ':': return G_COLON; case '%': return G_PCT;
+    case 'o': return G_DEG;
     default: return G_SPACE;
   }
 }
@@ -287,52 +292,44 @@ void drawHud() {
   drawLine(0, 188, 0, 200); drawLine(0, 200, 12, 200);
   drawLine(200, 188, 200, 200); drawLine(188, 200, 200, 200);
 
-  // [w] WiFi indicator (top-right corner)
-  if (!gWifiOk) {
-    drawRect(180, 1, 19, 11);
-    drawText(183, 3, "w", 1);
-  }
-
-  // Separator between top and bottom
+  // Separator
   drawLine(0, 96, 200, 96);
 
-  // --- Top: INNEN (left) ---
+  // --- Top-left: INNEN ---
   drawText(6, 4, "INNEN", 2);
-  drawBigNum(6, 24, gTemp, 18, 28, 3);
-  drawText(100, 32, "C", 2);
+  drawBigNum(6, 26, gTemp, 18, 28, 3);
+  drawText(100, 34, "oC", 2);
 
-  // --- Top: WIEN (right) ---
-  drawText(106, 4, "WIEN", 2);
-  drawBigNum(106, 24, gOutTemp, 18, 28, 3);
-  drawText(190, 32, "C", 2);
+  // --- Top-right: WIEN ---
+  drawText(110, 4, "WIEN", 2);
+  drawBigNum(110, 26, gOutTemp, 18, 28, 3);
+  drawText(186, 34, "oC", 2);
 
-  // --- Bottom: FEUCHT (left) ---
+  // --- Bottom-left: FEUCHT ---
   drawText(6, 102, "FEUCHT", 2);
   if (!isnan(gHum)) {
     char hbuf[8];
     snprintf(hbuf, sizeof(hbuf), "%d%%", (int)gHum);
-    drawText(6, 124, hbuf, 3);
+    drawText(6, 122, hbuf, 3);
   } else {
-    drawText(6, 124, "--%%", 3);
+    drawText(6, 122, "--%%", 3);
   }
 
-  // --- Bottom: BATT (right) ---
-  drawText(110, 102, "BATT", 2);
-  drawBattery(110, 126, gBatPct);
+  // --- Bottom-right: BATT ---
+  drawText(120, 102, "BATT", 2);
+  drawBattery(120, 126, gBatPct);
   if (gBatPct >= 0) {
     char bbuf[8];
     snprintf(bbuf, sizeof(bbuf), "%d%%", gBatPct);
-    drawText(142, 126, bbuf, 2);
+    drawText(154, 126, bbuf, 2);
   }
 
-  // Bottom bar
-  drawLine(0, 162, 200, 162);
-
-  // Time or [w] at bottom
+  // --- Bottom row: WiFi status ---
+  drawLine(0, 160, 200, 160);
   if (gWifiOk) {
-    drawText(6, 168, gTimeStr, 2);
+    drawText(6, 166, gTimeStr, 2);
   } else {
-    drawText(6, 168, "WIFI?", 2);
+    drawText(6, 166, "WIFI?", 2);
   }
 
   epd->EPD_Display();
