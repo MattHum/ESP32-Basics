@@ -229,6 +229,9 @@ void readSensor() {
     uint16_t rawH = (Wire.read() << 8) | Wire.read(); Wire.read();
     gTemp = -45.0f + 175.0f * ((float)rawT / 65535.0f);
     gHum = 100.0f * ((float)rawH / 65535.0f);
+    Serial.printf("[SHTC3] OK rawT=%u rawH=%u T=%.1f H=%.1f\n", rawT, rawH, gTemp, gHum);
+  } else {
+    Serial.printf("[SHTC3] FAIL avail=%d\n", Wire.available());
   }
   Wire.beginTransmission(0x70);
   Wire.write(0xB0); Wire.write(0x98);
@@ -305,29 +308,36 @@ void drawHud() {
   drawLine(0, 58, 200, 58);
   drawLine(0, 126, 200, 126);
 
+  // --- INNEN ---
   drawText(6, 4, "INNEN", 2);
-  int w1 = drawBigNum(6, 24, gTemp, 16, 28, 2);
+  int w1 = drawBigNum(6, 22, gTemp, 16, 28, 2);
   drawText(8 + w1, 28, "oC", 2);
 
+  // --- WIEN ---
   drawText(106, 4, "WIEN", 2);
-  int w2 = drawBigNum(106, 24, gOutTemp, 16, 28, 2);
+  int w2 = drawBigNum(106, 22, gOutTemp, 16, 28, 2);
   drawText(108 + w2, 28, "oC", 2);
 
+  // --- FEUCHT ---
   drawText(6, 64, "FEUCHT", 2);
-  if (!isnan(gHum)) {
+  Serial.printf("[HUD] gHum=%.1f isnan=%d gBatPct=%d\n", gHum, isnan(gHum), gBatPct);
+  if (!isnan(gHum) && gHum >= 0 && gHum <= 100) {
     char hbuf[8];
     snprintf(hbuf, sizeof(hbuf), "%d", (int)gHum);
-    int hw = drawText(6, 82, hbuf, 3);
-    drawText(8 + hw, 88, "%", 2);
+    int hw = drawText(6, 84, hbuf, 3);
+    drawText(10 + hw, 88, "%", 2);
   } else {
-    drawText(6, 82, "--", 3);
+    drawText(6, 84, "--", 3);
   }
 
+  // --- Bottom: BATT + WiFi ---
   drawBattery(6, 132, gBatPct);
   if (gBatPct >= 0) {
     char bbuf[8];
     snprintf(bbuf, sizeof(bbuf), "%d%%", gBatPct);
     drawText(38, 132, bbuf, 2);
+  } else {
+    drawText(38, 132, "--%", 2);
   }
 
   if (gWifiOk) {
@@ -383,7 +393,11 @@ void setup() {
   // WLAN starten (nach erstem Display-Update)
   Serial.println("[WLAN] Verbinde...");
   connectWiFi();
-  Serial.printf("[WLAN] Status: %s\n", gWifiOk ? "ok" : "failed");
+  if (!gWifiOk && WiFi.status() == WL_CONNECTED) {
+    gWifiOk = true;
+    Serial.println("[WLAN] WiFi.status() ist connected!");
+  }
+  Serial.printf("[WLAN] Status: %s, WiFi.status()=%d\n", gWifiOk ? "ok" : "failed", WiFi.status());
 
   // Wetter abrufen wenn WiFi verbunden
   if (gWifiOk) {
