@@ -3,14 +3,14 @@
   Waveshare ESP32-S3-ePaper-1.54G
   
   Zeigt: Innentemperatur, Feuchtigkeit, Batterie
-  + Wien Außentemperatur + Luftfeuchtigkeit (Open-Meteo)
+  + Wien Auï¿½entemperatur + Luftfeuchtigkeit (Open-Meteo)
   + Sprachausgabe via Flite TTS ( Englisch )
   
-  Audio: ES8311 Codec via I2S, Verstärker GPIO42/46
-  Taster: GPIO18 (BOOT) zum manuellen Auslösen der Sprachausgabe
+  Audio: ES8311 Codec via I2S, Verstï¿½rker GPIO42/46
+  Taster: GPIO18 (BOOT) zum manuellen Auslï¿½sen der Sprachausgabe
 
-  WLAN-SETUP: Bei erstmaligem Start oder nach Änderung der Zugangsdaten
-  öffnet sich automatisch ein Setup-Portal ("TempHumPow-Setup").
+  WLAN-SETUP: Bei erstmaligem Start oder nach ï¿½nderung der Zugangsdaten
+  ï¿½ffnet sich automatisch ein Setup-Portal ("TempHumPow-Setup").
 */
 
 #include <WiFi.h>
@@ -23,6 +23,8 @@
 // --- Flite TTS + Audio Tools ---
 #include "flite_arduino.h"
 #include "AudioTools.h"
+#include "AudioTools/AudioLibs/I2SCodecStream.h"   // korrekter Pfad (nicht "AudioLibs/...")
+#include "AudioBoard.h"                              // aus arduino-audio-driver
 
 // --- Pins ---
 #define PIN_VBAT_LATCH    17
@@ -50,6 +52,7 @@
 #define I2S_DOUT_PIN   45
 #define PA_CTRL_PIN    46
 #define AUDIO_PWR_PIN  42
+#define ES8311_I2C_ADDR 0x18   // Standard-Adresse; falls Codec nicht gefunden wird: I2C-Scan machen und anpassen (haeufige Alternative: 0x19)
 
 // --- Wien-Daten ---
 #define VIENNA_LAT  "48.2082"
@@ -68,8 +71,11 @@ bool gWifiOk = false;
 char gTimeStr[6] = "--:--";
 
 // --- Audio Globals ---
-I2SStream i2sOut;
-Flite flite;
+AudioDriverES8311Class es8311Driver(ES8311_I2C_ADDR);
+DriverPins audioPins;                        // Pin-Zuordnung wird in initAudio() befÃ¼llt
+AudioBoard audioBoard(es8311Driver, audioPins);
+I2SCodecStream i2sOut(audioBoard);            // Ã¼bernimmt I2C-Init des Codecs automatisch
+Flite flite(i2sOut);
 bool audioReady = false;
 
 // --- Display primitives ---
@@ -219,68 +225,119 @@ void drawBattery(int x, int y, int pct) {
 }
 
 // --- Sensor ---
-void readSensor() {
+// Ein einzelner SHTC3-Lesevorgang. Gibt true zurueck, wenn gueltige Daten kamen.
+bool readSensorOnce() {
+  // Bus jedes Mal frisch als Master initialisieren (wichtig, da ES8311 denselben
+  // I2C-Bus nutzt und initAudio() ihn ggf. umkonfiguriert hat)
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+  Wire.setClock(100000);   // SHTC3 zuverlaessig bei 100 kHz
+
+  // Wakeup (0x3517)
   Wire.beginTransmission(0x70);
   Wire.write(0x35); Wire.write(0x17);
-  Wire.endTransmission();
+  if (Wire.endTransmission() != 0) { Serial.println("[SHTC3] kein ACK (Wakeup)"); return false; }
   delay(1);
+
+  // Messung anstossen: T zuerst, Normal Mode, ohne Clock-Stretching (0x7866)
   Wire.beginTransmission(0x70);
   Wire.write(0x78); Wire.write(0x66);
-  Wire.endTransmission();
-  delay(15);
-  Wire.requestFrom((uint8_t)0x70, (uint8_t)6);
-  if (Wire.available() == 6) {
+  if (Wire.endTransmission() != 0) { Serial.println("[SHTC3] kein ACK (Messung)"); return false; }
+  delay(20);   // Messzeit Normal Mode: max ~12.1 ms, mit Reserve
+
+  int got = Wire.requestFrom((uint8_t)0x70, (uint8_t)6);
+  bool ok = false;
+  if (got == 6 && Wire.available() == 6) {
     uint16_t rawT = (Wire.read() << 8) | Wire.read(); Wire.read();
     uint16_t rawH = (Wire.read() << 8) | Wire.read(); Wire.read();
     gTemp = -45.0f + 175.0f * ((float)rawT / 65535.0f);
-    gHum = 100.0f * ((float)rawH / 65535.0f);
+    gHum  = 100.0f * ((float)rawH / 65535.0f);
+    ok = true;
     Serial.printf("[SHTC3] OK rawT=%u rawH=%u T=%.1f H=%.1f\n", rawT, rawH, gTemp, gHum);
   } else {
-    Serial.printf("[SHTC3] FAIL avail=%d\n", Wire.available());
+    Serial.printf("[SHTC3] FAIL got=%d avail=%d\n", got, Wire.available());
   }
+
+  // Sleep (0xB098)
   Wire.beginTransmission(0x70);
   Wire.write(0xB0); Wire.write(0x98);
   Wire.endTransmission();
+  return ok;
+}
+
+// Bis zu 3 Versuche, damit ein einzelner Bus-Aussetzer nicht zu "--.-" fuehrt
+void readSensor() {
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    if (readSensorOnce()) return;
+    Serial.printf("[SHTC3] Versuch %d fehlgeschlagen, neuer Versuch...\n", attempt);
+    delay(30);
+  }
+  Serial.println("[SHTC3] Alle Versuche fehlgeschlagen -> Werte bleiben NAN");
 }
 
 // --- Battery ---
+// Realistische 1S-LiPo-Kennlinie (Spannung -> Ladezustand) statt linearer Naeherung
+static int lipoPercent(float v) {
+  const float vt[] = {3.30f,3.50f,3.60f,3.70f,3.75f,3.80f,3.85f,3.90f,3.95f,4.00f,4.10f,4.20f};
+  const int   pt[] = {   0,    5,   10,   25,   40,   55,   65,   75,   85,   90,   96,  100};
+  const int n = sizeof(pt)/sizeof(pt[0]);
+  if (v <= vt[0])   return 0;
+  if (v >= vt[n-1]) return 100;
+  for (int i = 1; i < n; i++) {
+    if (v < vt[i]) {
+      float f = (v - vt[i-1]) / (vt[i] - vt[i-1]);
+      return (int)(pt[i-1] + f * (pt[i] - pt[i-1]) + 0.5f);
+    }
+  }
+  return 100;
+}
+
 void readBattery() {
   analogReadResolution(12);
-  int raw = analogRead(BATTERY_ADC_PIN);
-  float vBat = (raw / 4095.0f) * 3.3f * 2.0f;
-  float pct = (vBat - 3.3f) / (4.2f - 3.3f) * 100.0f;
-  gBatPct = constrain((int)pct, 0, 100);
-  Serial.printf("[BATT] raw=%d vBat=%.2fV pct_raw=%.1f gBatPct=%d\n", raw, vBat, pct, gBatPct);
+  analogSetPinAttenuation(BATTERY_ADC_PIN, ADC_11db);  // Messbereich bis ~3.1V (Teiler halbiert VBAT)
+
+  // Mehrfach messen + mitteln fuer stabilen Wert; kalibrierte mV verwenden
+  uint32_t sum = 0;
+  const int N = 16;
+  for (int i = 0; i < N; i++) { sum += analogReadMilliVolts(BATTERY_ADC_PIN); delay(2); }
+  float vAdc = (sum / (float)N) / 1000.0f;   // Spannung am ADC-Pin (V)
+  float vBat = vAdc * 2.0f;                   // Spannungsteiler R38/R21 = 200K/200K -> Faktor 2
+
+  gBatPct = lipoPercent(vBat);
+  Serial.printf("[BATT] vAdc=%.3fV vBat=%.2fV gBatPct=%d%%\n", vAdc, vBat, gBatPct);
 }
 
 // --- Audio / TTS ---
 void initAudio() {
-  Serial.println("[AUDIO] Init ES8311 + I2S...");
+  Serial.println("[AUDIO] Init ES8311 (I2C) + I2S...");
 
-  // Verstärker einschalten
+  // Verstï¿½rker einschalten
   pinMode(PA_CTRL_PIN, OUTPUT);
   pinMode(AUDIO_PWR_PIN, OUTPUT);
   digitalWrite(PA_CTRL_PIN, HIGH);
-  digitalWrite(AUDIO_PWR_PIN, LOW);  // LOW = Verstärker AN
+  digitalWrite(AUDIO_PWR_PIN, LOW);  // LOW = Verstï¿½rker AN
   delay(200);
 
-  // I2S konfigurieren: 8kHz, 16bit, Mono (Flite-Ausgabe)
+  // Pin-Zuordnung fÃ¼r den Codec: I2C (scl, sda, adresse) + I2S (mclk, bclk, ws, dout, din)
+  audioPins.addI2C(audio_driver::PinFunction::CODEC, PIN_I2C_SCL, PIN_I2C_SDA, ES8311_I2C_ADDR);
+  audioPins.addI2S(audio_driver::PinFunction::CODEC, I2S_MCK_PIN, I2S_BCK_PIN, I2S_LRCK_PIN, I2S_DOUT_PIN, -1); // -1 = kein Mic-Eingang verdrahtet
+
+  // I2S + Codec konfigurieren: 8kHz, 16bit, Mono (Flite-Ausgabe)
   auto cfg = i2sOut.defaultConfig(TX_MODE);
   cfg.sample_rate = 8000;
   cfg.channels = 1;
   cfg.bits_per_sample = 16;
-  cfg.pin_bck = I2S_BCK_PIN;
-  cfg.pin_ws = I2S_LRCK_PIN;
-  cfg.pin_data = I2S_DOUT_PIN;
-  cfg.pin_mck = I2S_MCK_PIN;
-  i2sOut.begin(cfg);
 
-  // Flite initialisieren
-  flite.begin(i2sOut);
+  if (!i2sOut.begin(cfg)) {
+    Serial.println("[AUDIO] FEHLER: ES8311-Codec-Init fehlgeschlagen (I2C-Adresse/Pins pruefen!)");
+    audioReady = false;
+    return;
+  }
+  i2sOut.setVolume(0.5f);   // Lautstaerke (0.0-1.0)
+
+  // Flite Stimme setzen
   flite.setVoice(register_cmu_us_kal());
   audioReady = true;
-  Serial.println("[AUDIO] Flite TTS bereit (cmu_us_kal)");
+  Serial.println("[AUDIO] Flite TTS bereit (cmu_us_kal, ES8311 per I2C initialisiert)");
 }
 
 void speakWeather() {
@@ -292,10 +349,11 @@ void speakWeather() {
   char sentence[256];
 
   if (gWifiOk && !isnan(gOutTemp) && !isnan(gOutHum)) {
-    // Wien-Daten verfügbar: temperatur + feuchtigkeit
+    // Wien-Daten verfï¿½gbar: temperatur + feuchtigkeit
     snprintf(sentence, sizeof(sentence),
-      "In Vienna it is currently %.1f degrees Celsius "
-      "and the humidity is %d percent.",
+      "Atmospheric scan for Vienna complete. "
+      "Temperature %.1f degrees Celsius. "
+      "Humidity %d percent.",
       gOutTemp, (int)gOutHum);
   } else if (!isnan(gTemp) && !isnan(gHum)) {
     // Nur Innenwerte
@@ -474,8 +532,14 @@ void setup() {
   if (gWifiOk) {
     Serial.println("[WETT] Hole Wien-Wetter...");
     fetchViennaWeather();
-    Serial.printf("[WETT] Außentemp: %.1f C, Feucht: %.1f%%, Regen: %d\n", gOutTemp, gOutHum, gRain);
+    Serial.printf("[WETT] Auï¿½entemp: %.1f C, Feucht: %.1f%%, Regen: %d\n", gOutTemp, gOutHum, gRain);
   }
+
+  // Innensensor nach Audio-/WLAN-Init nochmals frisch lesen (gemeinsamer I2C-Bus
+  // mit dem ES8311-Codec -> Bus wird hier sauber neu als Master initialisiert)
+  Serial.println("[SENS] Innensensor erneut lesen...");
+  readSensor();
+  Serial.printf("[SENS] Temp: %.1f C, Hum: %.1f %%\n", gTemp, gHum);
 
   // HUD neu zeichnen mit finalen Daten
   Serial.println("[HUD] Zeichne finalen HUD...");
@@ -489,16 +553,16 @@ void setup() {
   }
 
   Serial.println("=== Setup fertig ===");
-  Serial.println("[LOOP] Taster drücken für TTS...");
+  Serial.println("[LOOP] Taster drï¿½cken fï¿½r TTS...");
 }
 
 // --- Loop: Taster-Handling ---
 void loop() {
-  // BOOT-Taster (GPIO18) prüfen: LOW = gedrückt
+  // BOOT-Taster (GPIO18) prï¿½fen: LOW = gedrï¿½ckt
   if (digitalRead(PIN_PWR_BUTTON) == LOW) {
     delay(50);  // Entprellen
     if (digitalRead(PIN_PWR_BUTTON) == LOW) {
-      Serial.println("[TTS] Taster gedrückt!");
+      Serial.println("[TTS] Taster gedrï¿½ckt!");
       speakWeather();
       // Warten bis Taster losgelassen
       while (digitalRead(PIN_PWR_BUTTON) == LOW) {
